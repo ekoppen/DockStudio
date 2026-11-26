@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import AppKit
 
 /// Blur-achtergrond (zoals het echte Dock).
@@ -298,6 +299,15 @@ struct DockView: View {
     @ObservedObject var store: ThemeStore
     @ObservedObject var model: DockModel
     @ObservedObject var hover = DockHover.shared
+    @State private var dropTarget: String?
+
+    private func targetBinding(_ item: DockItem) -> Binding<Bool> {
+        Binding(get: { dropTarget == item.id },
+                set: { on in
+                    if on { dropTarget = item.groupID != nil ? item.id : nil }
+                    else if dropTarget == item.id { dropTarget = nil }
+                })
+    }
 
     private func tapped(_ item: DockItem, index: Int, panelWidth: CGFloat) {
         guard item.groupID != nil else { model.open(item); return }
@@ -342,6 +352,12 @@ struct DockView: View {
                         showLabel: t.showLabels && hovered == i
                     ) { tapped(item, index: i, panelWidth: size.width) }
                     .contextMenu { ItemContextMenu(item: item) }
+                    .scaleEffect(dropTarget == item.id ? 1.18 : 1, anchor: .bottom)
+                    .onDrag { NSItemProvider(object: item.id as NSString) }
+                    .onDrop(of: [UTType.plainText, UTType.fileURL], isTargeted: targetBinding(item)) { providers in
+                        guard let gid = item.groupID else { return false }
+                        return DockDrop.handle(providers, into: gid)
+                    }
                 }
             }
             .padding(.bottom, CGFloat(t.paddingBottom))

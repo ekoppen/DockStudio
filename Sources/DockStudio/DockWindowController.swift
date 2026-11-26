@@ -34,11 +34,11 @@ final class DockWindowController {
             .sink { [weak self] _ in self?.reposition() }
             .store(in: &bag)
 
-        mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { [weak self] _ in
+        mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged]) { [weak self] _ in
             self?.mouseMoved()
         }
         // Zolang het venster muisevents accepteert komen die via de lokale monitor binnen.
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .mouseMoved) { [weak self] event in
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged]) { [weak self] event in
             self?.mouseMoved()
             return event
         }

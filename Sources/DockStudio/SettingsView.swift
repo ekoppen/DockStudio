@@ -452,7 +452,7 @@ struct SettingsView: View {
     @ViewBuilder
     private var groupsTab: some View {
         Section {
-            note("Een groep verschijnt als één icoon in de dock. Klik erop om de apps te zien. Je kunt ook rechtsklikken op een app in de dock en 'Voeg toe aan groep' kiezen.")
+            note("Een groep verschijnt als één icoon in de dock. Klik erop om de inhoud te zien. Je kunt apps en Home Assistant-acties erin zetten door ze op de groep te slepen, via rechtsklik 'Voeg toe aan groep', of hieronder.")
             Button("Nieuwe groep") { prefs.newGroup(with: nil) }
         } header: {
             sectionHeader("Groepen", "folder")
@@ -463,10 +463,10 @@ struct SettingsView: View {
                 TextField("Naam", text: $g.name)
                 ForEach(g.members, id: \.self) { path in
                     HStack {
-                        Image(nsImage: NSWorkspace.shared.icon(forFile: path))
+                        Image(nsImage: memberIcon(path))
                             .resizable()
                             .frame(width: 22, height: 22)
-                        Text(FileManager.default.displayName(atPath: path))
+                        Text(memberName(path))
                         Spacer()
                         Button {
                             prefs.remove(path, from: g.id)
@@ -476,8 +476,8 @@ struct SettingsView: View {
                         .buttonStyle(.borderless)
                     }
                 }
-                Menu("Voeg app toe") {
-                    ForEach(dockModel.items.filter { $0.groupID == nil && $0.haEntity == nil && !$0.isTrash }) { app in
+                Menu("Voeg app of actie toe") {
+                    ForEach(dockModel.items.filter { $0.groupID == nil && !$0.isTrash }) { app in
                         Button(app.name) { prefs.add(app.id, to: g.id) }
                     }
                 }
@@ -486,6 +486,24 @@ struct SettingsView: View {
                 sectionHeader(g.name, "folder")
             }
         }
+    }
+
+    private func haEntity(for path: String) -> HADockEntity? {
+        guard path.hasPrefix("ha:") else { return nil }
+        let id = String(path.dropFirst(3))
+        return ha.config.dockEntities.first { $0.id == id }
+    }
+
+    private func memberName(_ path: String) -> String {
+        if path.hasPrefix("ha:") { return haEntity(for: path)?.name ?? String(path.dropFirst(3)) }
+        return FileManager.default.displayName(atPath: path)
+    }
+
+    private func memberIcon(_ path: String) -> NSImage {
+        if path.hasPrefix("ha:") {
+            return HAIcon.make(domain: haEntity(for: path)?.domain ?? "switch", on: false)
+        }
+        return NSWorkspace.shared.icon(forFile: path)
     }
 
     // MARK: Tab: Koppelingen

@@ -70,6 +70,19 @@ final class DockModel: ObservableObject {
             ))
         }
 
+        // Home Assistant-items
+        let ha = HAStore.shared
+        if ha.config.enabled {
+            for e in ha.config.dockEntities {
+                let on = ha.isOn(e.id)
+                result.append(DockItem(
+                    id: "ha:\(e.id)", name: e.name, url: URL(fileURLWithPath: "/"),
+                    icon: HAIcon.make(domain: e.domain, on: on),
+                    isRunning: on, isTrash: false, haEntity: e.id
+                ))
+            }
+        }
+
         // Groepen: leden verdwijnen uit de rij en worden vervangen door één groepsicoon.
         var memberToGroup: [String: DockGroup] = [:]
         for g in DockPrefs.shared.groups {
@@ -93,19 +106,6 @@ final class DockModel: ObservableObject {
                 }
             }
             result = grouped
-        }
-
-        // Home Assistant-items
-        let ha = HAStore.shared
-        if ha.config.enabled {
-            for e in ha.config.dockEntities {
-                let on = ha.isOn(e.id)
-                result.append(DockItem(
-                    id: "ha:\(e.id)", name: e.name, url: URL(fileURLWithPath: "/"),
-                    icon: HAIcon.make(domain: e.domain, on: on),
-                    isRunning: on, isTrash: false, haEntity: e.id
-                ))
-            }
         }
 
         // Prullenmand

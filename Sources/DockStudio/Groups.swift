@@ -158,12 +158,28 @@ struct ItemContextMenu: View {
         }
     }
 
+    @ViewBuilder
+    private var groupMenu: some View {
+        Menu("Voeg toe aan groep") {
+            ForEach(prefs.groups) { g in
+                Button(g.name) { prefs.add(item.id, to: g.id) }
+            }
+            if !prefs.groups.isEmpty { Divider() }
+            Button("Nieuwe groep") { prefs.newGroup(with: item.id) }
+        }
+        if let gid = inGroup {
+            Button("Haal uit groep") { prefs.remove(item.id, from: gid) }
+        }
+    }
+
     var body: some View {
         if let gid = item.groupID {
             Button("Hernoem groep…") { prefs.promptRename(gid) }
             Button("Verwijder groep") { prefs.delete(gid) }
         } else if item.haEntity != nil {
             Button("Schakel om") { DockModel.shared.open(item) }
+            Divider()
+            groupMenu
         } else if item.isTrash {
             Button("Open") { DockModel.shared.open(item) }
         } else {
@@ -178,16 +194,7 @@ struct ItemContextMenu: View {
                 Button("Forceer stop") { app.forceTerminate() }
             }
             Divider()
-            Menu("Voeg toe aan groep") {
-                ForEach(prefs.groups) { g in
-                    Button(g.name) { prefs.add(item.id, to: g.id) }
-                }
-                if !prefs.groups.isEmpty { Divider() }
-                Button("Nieuwe groep") { prefs.newGroup(with: item.id) }
-            }
-            if let gid = inGroup {
-                Button("Haal uit groep") { prefs.remove(item.id, from: gid) }
-            }
+            groupMenu
             if prefs.isInDock(item.id) {
                 Button("Verwijder uit dock") { prefs.unpin(item.id) }
             } else {
@@ -346,5 +353,37 @@ struct GroupCell: View {
         .onHover { hovering = $0 }
         .onTapGesture(perform: onTap)
         .contextMenu { ItemContextMenu(item: item, inGroup: groupID) }
+    }
+}
+
+// MARK: Slepen
+
+enum DockDrop {
+    /// Verwerkt gesleepte items (uit de dock zelf of .app-bestanden uit Finder) op een groep.
+    static func handle(_ providers: [NSItemProvider], into gid: UUID) -> Bool {
+        var accepted = false
+        for p in providers {
+            if p.hasItemConformingToTypeIdentifier("public.file-url") {
+                accepted = true
+                p.loadItem(forTypeIdentifier: "public.file-url", options: nil) { data, _ in
+                    var url: URL?
+                    if let d = data as? Data { url = URL(dataRepresentation: d, relativeTo: nil) }
+                    else if let u = data as? URL { url = u }
+                    guard let path = url?.standardizedFileURL.path, path.hasSuffix(".app") else { return }
+                    DispatchQueue.main.async {
+                        DockPrefs.shared.pin(path)
+                        DockPrefs.shared.add(path, to: gid)
+                    }
+                }
+            } else if p.canLoadObject(ofClass: NSString.self) {
+                accepted = true
+                _ = p.loadObject(ofClass: NSString.self) { obj, _ in
+                    guard let id = (obj as? NSString) as String?,
+                          id.hasPrefix("/") || id.hasPrefix("ha:") else { return }
+                    DispatchQueue.main.async { DockPrefs.shared.add(id, to: gid) }
+                }
+            }
+        }
+        return accepted
     }
 }
