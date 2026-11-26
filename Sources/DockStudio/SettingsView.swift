@@ -469,6 +469,20 @@ struct SettingsView: View {
                         Text(memberName(path))
                         Spacer()
                         Button {
+                            prefs.move(path, in: g.id, by: -1)
+                        } label: {
+                            Image(systemName: "chevron.up")
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(g.members.first == path)
+                        Button {
+                            prefs.move(path, in: g.id, by: 1)
+                        } label: {
+                            Image(systemName: "chevron.down")
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(g.members.last == path)
+                        Button {
                             prefs.remove(path, from: g.id)
                         } label: {
                             Image(systemName: "minus.circle")

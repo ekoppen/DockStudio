@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import Combine
+import UniformTypeIdentifiers
 
 // MARK: Gegevens
 
@@ -65,6 +66,23 @@ final class DockPrefs: ObservableObject {
     func remove(_ path: String, from id: UUID) {
         guard let i = groups.firstIndex(where: { $0.id == id }) else { return }
         groups[i].members.removeAll { $0 == path }
+    }
+
+    /// Zet `path` voor `target` in de groep (ook vanuit een andere groep of de dock).
+    func place(_ path: String, before target: String, in id: UUID) {
+        guard path != target else { return }
+        removeFromAllGroups(path)
+        guard let i = groups.firstIndex(where: { $0.id == id }) else { return }
+        let at = groups[i].members.firstIndex(of: target) ?? groups[i].members.count
+        groups[i].members.insert(path, at: at)
+    }
+
+    func move(_ path: String, in id: UUID, by offset: Int) {
+        guard let i = groups.firstIndex(where: { $0.id == id }),
+              let from = groups[i].members.firstIndex(of: path) else { return }
+        let to = from + offset
+        guard to >= 0, to < groups[i].members.count else { return }
+        groups[i].members.swapAt(from, to)
     }
 
     func delete(_ id: UUID) {
@@ -227,7 +245,7 @@ final class GroupPopup {
 
         let theme = ThemeStore.shared.theme
         let size = GroupPopupView.size(count: item.members.count)
-        let view = GroupPopupView(group: item, theme: theme) { [weak self] member in
+        let view = GroupPopupView(initial: item, theme: theme) { [weak self] member in
             DockModel.shared.open(member)
             self?.close()
         }
@@ -277,9 +295,15 @@ final class GroupPopup {
 }
 
 struct GroupPopupView: View {
-    let group: DockItem
+    let initial: DockItem
     let theme: DockTheme
     let onOpen: (DockItem) -> Void
+    @ObservedObject var model = DockModel.shared
+
+    /// Actuele groep uit het model, zodat het venster meebeweegt na het verslepen.
+    private var group: DockItem {
+        model.items.first(where: { $0.groupID == initial.groupID }) ?? initial
+    }
 
     static let cell = CGSize(width: 92, height: 94)
     static let pad: CGFloat = 16
@@ -352,6 +376,11 @@ struct GroupCell: View {
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture(perform: onTap)
+        .onDrag { NSItemProvider(object: item.id as NSString) }
+        .onDrop(of: [UTType.plainText], isTargeted: nil) { providers in
+            guard let gid = groupID else { return false }
+            return DockDrop.place(providers, before: item.id, in: gid)
+        }
         .contextMenu { ItemContextMenu(item: item, inGroup: groupID) }
     }
 }
@@ -359,6 +388,20 @@ struct GroupCell: View {
 // MARK: Slepen
 
 enum DockDrop {
+    /// Zet een gesleept item voor een ander item in dezelfde groep.
+    static func place(_ providers: [NSItemProvider], before target: String, in gid: UUID) -> Bool {
+        var accepted = false
+        for p in providers where p.canLoadObject(ofClass: NSString.self) {
+            accepted = true
+            _ = p.loadObject(ofClass: NSString.self) { obj, _ in
+                guard let id = (obj as? NSString) as String?,
+                      id.hasPrefix("/") || id.hasPrefix("ha:") else { return }
+                DispatchQueue.main.async { DockPrefs.shared.place(id, before: target, in: gid) }
+            }
+        }
+        return accepted
+    }
+
     /// Verwerkt gesleepte items (uit de dock zelf of .app-bestanden uit Finder) op een groep.
     static func handle(_ providers: [NSItemProvider], into gid: UUID) -> Bool {
         var accepted = false
