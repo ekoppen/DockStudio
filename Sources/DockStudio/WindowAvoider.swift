@@ -1,0 +1,198 @@
+import AppKit
+import ApplicationServices
+
+enum WindowMode: String, Codable, CaseIterable, Identifiable {
+    case none, reserve, smartHide
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .none: return "Geen (vensters mogen eroverheen)"
+        case .reserve: return "Ruimte vrijhouden"
+        case .smartHide: return "Slim verbergen"
+        }
+    }
+}
+
+/// Houdt vensters van andere apps in de gaten via de Toegankelijkheids-API.
+/// - reserve: vensters worden kleiner/omhoog geschoven zodat ze niet onder de dock vallen.
+/// - smartHide: meldt of een venster over de dock heen ligt.
+final class WindowAvoider {
+    static let shared = WindowAvoider()
+
+    private var timer: Timer?
+    private let queue = DispatchQueue(label: "dockstudio.windowavoider", qos: .utility)
+    private var busy = false
+    private static var didPrompt = false
+
+    static var isTrusted: Bool { AXIsProcessTrusted() }
+
+    static func requestTrust() {
+        let opts = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
+        _ = AXIsProcessTrustedWithOptions(opts)
+    }
+
+    static func openSystemSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    func start() {
+        guard timer == nil else { return }
+        timer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
+            self?.tick()
+        }
+    }
+
+    // MARK: Tick (hoofdthread)
+
+    private func tick() {
+        let store = ThemeStore.shared
+        let controller = DockWindowController.shared
+        let mode = store.windowMode
+
+        guard store.dockEnabled else {
+            controller.setWantsHidden(false)
+            controller.setFullScreenHidden(false)
+            return
+        }
+        if !AXIsProcessTrusted() {
+            if !Self.didPrompt {
+                Self.didPrompt = true
+                Self.requestTrust()
+            }
+            return
+        }
+        // Niet ingrijpen terwijl de gebruiker een venster sleept of vergroot.
+        guard !busy, NSEvent.pressedMouseButtons & 1 == 0,
+              let screen = NSScreen.screens.first else { return }
+
+        let t = store.theme
+        let count = DockModel.shared.items.count
+        let barH = DockLayout.barHeight(t)
+        let barW = DockLayout.barWidth(t, count: count)
+        let H = screen.frame.height
+        let W = screen.frame.width
+
+        let dockTopAppKit = screen.frame.minY + CGFloat(t.bottomMargin) + barH
+        let limitY = H - (dockTopAppKit + 6)                 // AX-coördinaten (y omlaag)
+        let menuTop = H - screen.visibleFrame.maxY
+        let barRect = CGRect(x: screen.frame.midX - barW / 2 + CGFloat(t.offsetX),
+                             y: H - dockTopAppKit,
+                             width: barW, height: barH)
+        let screenRect = CGRect(x: 0, y: 0, width: W, height: H)
+
+        let ownPID = ProcessInfo.processInfo.processIdentifier
+        let frontPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        let pids = NSWorkspace.shared.runningApplications
+            .filter { $0.activationPolicy == .regular && $0.processIdentifier != ownPID }
+            .map { $0.processIdentifier }
+
+        busy = true
+        queue.async { [weak self] in
+            guard let self else { return }
+            var overlap = false
+            if mode != .none {
+                for pid in pids {
+                    if self.process(pid: pid, mode: mode, limitY: limitY, menuTop: menuTop,
+                                    barRect: barRect, screenRect: screenRect) {
+                        overlap = true
+                    }
+                }
+            }
+            var fullscreen = false
+            if let frontPID, frontPID != ownPID {
+                fullscreen = self.focusedWindowIsFullScreen(pid: frontPID)
+            }
+            DispatchQueue.main.async {
+                self.busy = false
+                controller.setWantsHidden(mode == .smartHide && overlap)
+                controller.setFullScreenHidden(fullscreen)
+            }
+        }
+    }
+
+    // MARK: Per app (achtergrondthread)
+
+    /// Geeft true terug als een venster van deze app over de dock heen ligt.
+    private func process(pid: pid_t, mode: WindowMode, limitY: CGFloat, menuTop: CGFloat,
+                         barRect: CGRect, screenRect: CGRect) -> Bool {
+        let app = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(app, 0.15)
+        guard let winsRef = copy(app, kAXWindowsAttribute),
+              let windows = winsRef as? [AXUIElement] else { return false }
+
+        var overlapping = false
+
+        for w in windows {
+            AXUIElementSetMessagingTimeout(w, 0.15)
+            guard (copy(w, kAXSubroleAttribute) as? String) == (kAXStandardWindowSubrole as String),
+                  !(bool(w, kAXMinimizedAttribute)),
+                  !(bool(w, "AXFullScreen")),
+                  let pos = cgPoint(copy(w, kAXPositionAttribute)),
+                  let size = cgSize(copy(w, kAXSizeAttribute)) else { continue }
+
+            let frame = CGRect(origin: pos, size: size)
+            guard screenRect.contains(CGPoint(x: frame.midX, y: frame.midY)) else { continue }
+
+            if frame.intersects(barRect) { overlapping = true }
+
+            guard mode == .reserve, frame.maxY > limitY + 1 else { continue }
+
+            let avail = limitY - menuTop
+            var settable: DarwinBoolean = false
+            AXUIElementIsAttributeSettable(w, kAXSizeAttribute as CFString, &settable)
+
+            if size.height > avail, settable.boolValue {
+                var newSize = CGSize(width: size.width, height: avail)
+                if let v = AXValueCreate(.cgSize, &newSize) {
+                    AXUIElementSetAttributeValue(w, kAXSizeAttribute as CFString, v)
+                }
+                var newPos = CGPoint(x: pos.x, y: menuTop)
+                if let v = AXValueCreate(.cgPoint, &newPos) {
+                    AXUIElementSetAttributeValue(w, kAXPositionAttribute as CFString, v)
+                }
+            } else {
+                var newPos = CGPoint(x: pos.x, y: max(menuTop, limitY - size.height))
+                if let v = AXValueCreate(.cgPoint, &newPos) {
+                    AXUIElementSetAttributeValue(w, kAXPositionAttribute as CFString, v)
+                }
+            }
+        }
+        return overlapping
+    }
+
+    /// Is het actieve venster van deze app in volledig scherm?
+    private func focusedWindowIsFullScreen(pid: pid_t) -> Bool {
+        let app = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(app, 0.15)
+        guard let f = copy(app, kAXFocusedWindowAttribute),
+              CFGetTypeID(f) == AXUIElementGetTypeID() else { return false }
+        return bool(f as! AXUIElement, "AXFullScreen")
+    }
+
+    // MARK: AX-hulpjes
+
+    private func copy(_ el: AXUIElement, _ name: String) -> CFTypeRef? {
+        var r: CFTypeRef?
+        return AXUIElementCopyAttributeValue(el, name as CFString, &r) == .success ? r : nil
+    }
+
+    private func bool(_ el: AXUIElement, _ name: String) -> Bool {
+        (copy(el, name) as? Bool) ?? false
+    }
+
+    private func cgPoint(_ v: CFTypeRef?) -> CGPoint? {
+        guard let v, CFGetTypeID(v) == AXValueGetTypeID() else { return nil }
+        var p = CGPoint.zero
+        return AXValueGetValue(v as! AXValue, .cgPoint, &p) ? p : nil
+    }
+
+    private func cgSize(_ v: CFTypeRef?) -> CGSize? {
+        guard let v, CFGetTypeID(v) == AXValueGetTypeID() else { return nil }
+        var s = CGSize.zero
+        return AXValueGetValue(v as! AXValue, .cgSize, &s) ? s : nil
+    }
+}

@@ -1,0 +1,12 @@
+# Swift / Xcode
+.build/
+.swiftpm/
+*.xcodeproj/xcuserdata/
+xcuserdata/
+DerivedData/
+
+# Gebouwde app
+DockStudio.app/
+
+# macOS
+.DS_Store
