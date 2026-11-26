@@ -1,0 +1,50 @@
+name: Release
+
+# Bouwt DockStudio.app op een Mac-server en zet de zip bij de release.
+# Start door een tag te pushen, bijvoorbeeld: git tag v1.0 && git push origin v1.0
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toon toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Bouw DockStudio.app
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          [ "${GITHUB_REF_TYPE}" = "tag" ] || VERSION="0.0.0-dev"
+          ./build-app.sh "$VERSION"
+
+      - name: Maak zip
+        run: |
+          NAME="DockStudio-${GITHUB_REF_NAME}-macos-$(uname -m).zip"
+          ditto -c -k --keepParent DockStudio.app "$NAME"
+          echo "ASSET=$NAME" >> "$GITHUB_ENV"
+
+      - name: Bewaar als artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DockStudio-app
+          path: ${{ env.ASSET }}
+
+      - name: Maak GitHub-release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "$ASSET" \
+            --title "DockStudio $GITHUB_REF_NAME" \
+            --generate-notes \
+            --prerelease

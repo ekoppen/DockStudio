@@ -1,6 +1,8 @@
 #!/bin/bash
 # Bouwt DockStudio.app (menubalk-app zonder eigen Dock-icoon)
+# Gebruik: ./build-app.sh [versie]   (standaard 0.9)
 set -e
+VERSION="${1:-0.9}"
 cd "$(dirname "$0")"
 
 swift build -c release
@@ -10,7 +12,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
 cp .build/release/DockStudio "$APP/Contents/MacOS/DockStudio"
 
-cat > "$APP/Contents/Info.plist" <<'EOF'
+cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -19,7 +21,8 @@ cat > "$APP/Contents/Info.plist" <<'EOF'
   <key>CFBundleIdentifier</key><string>nl.doorkoppen.dockstudio</string>
   <key>CFBundleExecutable</key><string>DockStudio</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleVersion</key><string>1</string>
+  <key>CFBundleVersion</key><string>$VERSION</string>
+  <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSUIElement</key><true/>
   <key>NSAppTransportSecurity</key><dict><key>NSAllowsArbitraryLoads</key><true/></dict>
