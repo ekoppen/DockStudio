@@ -299,6 +299,17 @@ struct DockView: View {
     @ObservedObject var model: DockModel
     @ObservedObject var hover = DockHover.shared
 
+    private func tapped(_ item: DockItem, index: Int, panelWidth: CGFloat) {
+        guard item.groupID != nil else { model.open(item); return }
+        let t = store.theme
+        let rest = [CGFloat](repeating: 1, count: model.items.count)
+        let cs = DockLayout.centers(t, scales: rest, panelWidth: panelWidth)
+        guard index < cs.count, let f = DockWindowController.shared.panelFrame else { return }
+        GroupPopup.shared.toggle(item,
+                                 anchorX: f.minX + cs[index],
+                                 anchorY: f.minY + max(CGFloat(t.bottomMargin), 0) + DockLayout.barHeight(t) + 10)
+    }
+
     var body: some View {
         let t = store.theme
         let items = model.items
@@ -329,7 +340,8 @@ struct DockView: View {
                         dimActive: hv.active,
                         isBouncing: model.bouncing.contains(item.id),
                         showLabel: t.showLabels && hovered == i
-                    ) { model.open(item) }
+                    ) { tapped(item, index: i, panelWidth: size.width) }
+                    .contextMenu { ItemContextMenu(item: item) }
                 }
             }
             .padding(.bottom, CGFloat(t.paddingBottom))

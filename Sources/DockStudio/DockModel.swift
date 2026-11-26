@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import Combine
 
 struct DockItem: Identifiable {
     let id: String
@@ -9,6 +10,8 @@ struct DockItem: Identifiable {
     let isRunning: Bool
     let isTrash: Bool
     var haEntity: String? = nil   // Home Assistant-item
+    var groupID: UUID? = nil      // groep-item
+    var members: [DockItem] = []  // apps in de groep
 }
 
 /// Haalt de apps op die in het echte Dock staan, plus draaiende apps.
@@ -17,9 +20,14 @@ final class DockModel: ObservableObject {
 
     @Published var items: [DockItem] = []
     @Published var bouncing: Set<String> = []
+    private var bag = Set<AnyCancellable>()
 
     init() {
         reload()
+        DockPrefs.shared.objectWillChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.reload() }
+            .store(in: &bag)
         let nc = NSWorkspace.shared.notificationCenter
         for name in [NSWorkspace.didLaunchApplicationNotification,
                      NSWorkspace.didTerminateApplicationNotification] {
@@ -34,7 +42,9 @@ final class DockModel: ObservableObject {
         let runningURLs = Set(running.compactMap { $0.bundleURL?.standardizedFileURL.path })
 
         var urls: [URL] = [URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app")]
-        urls += Self.pinnedAppURLs()
+        let hiddenPaths = Set(DockPrefs.shared.hidden)
+        urls += Self.pinnedAppURLs().filter { !hiddenPaths.contains($0.standardizedFileURL.path) }
+        urls += DockPrefs.shared.extra.map { URL(fileURLWithPath: $0) }
 
         // Draaiende apps die niet vastgepind zijn
         let known = Set(urls.map { $0.standardizedFileURL.path })
@@ -58,6 +68,31 @@ final class DockModel: ObservableObject {
                 isRunning: runningURLs.contains(path),
                 isTrash: false
             ))
+        }
+
+        // Groepen: leden verdwijnen uit de rij en worden vervangen door één groepsicoon.
+        var memberToGroup: [String: DockGroup] = [:]
+        for g in DockPrefs.shared.groups {
+            for p in g.members where memberToGroup[p] == nil { memberToGroup[p] = g }
+        }
+        if !memberToGroup.isEmpty {
+            var emitted = Set<UUID>()
+            var grouped: [DockItem] = []
+            for it in result {
+                if let g = memberToGroup[it.id] {
+                    guard emitted.insert(g.id).inserted else { continue }
+                    let mem = g.members.compactMap { p in result.first(where: { $0.id == p }) }
+                    grouped.append(DockItem(
+                        id: "group:\(g.id.uuidString)", name: g.name,
+                        url: URL(fileURLWithPath: "/"),
+                        icon: GroupIcon.make(members: mem.map { $0.icon }),
+                        isRunning: mem.contains { $0.isRunning }, isTrash: false,
+                        groupID: g.id, members: mem))
+                } else {
+                    grouped.append(it)
+                }
+            }
+            result = grouped
         }
 
         // Home Assistant-items

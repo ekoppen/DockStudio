@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 enum SettingsTab: String, CaseIterable, Identifiable {
-    case dock, icons, behavior, themes, connections
+    case dock, icons, groups, behavior, themes, connections
 
     var id: String { rawValue }
 
@@ -10,6 +10,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         switch self {
         case .dock: return "Dock"
         case .icons: return "Iconen"
+        case .groups: return "Groepen"
         case .behavior: return "Gedrag"
         case .themes: return "Thema's"
         case .connections: return "Koppelingen"
@@ -20,6 +21,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         switch self {
         case .dock: return "dock.rectangle"
         case .icons: return "square.grid.2x2"
+        case .groups: return "folder"
         case .behavior: return "wand.and.stars"
         case .themes: return "paintpalette"
         case .connections: return "link"
@@ -31,6 +33,8 @@ struct SettingsView: View {
     @ObservedObject var store: ThemeStore
     @ObservedObject var ha = HAStore.shared
     @ObservedObject var updater = Updater.shared
+    @ObservedObject var prefs = DockPrefs.shared
+    @ObservedObject var dockModel = DockModel.shared
     @State private var updateTokenInput = ""
     @AppStorage("dockstudio.settingsFloating") private var floating = false
     @State private var tab: SettingsTab = .dock
@@ -184,6 +188,7 @@ struct SettingsView: View {
         switch tab {
         case .dock: dockTab
         case .icons: iconsTab
+        case .groups: groupsTab
         case .behavior: behaviorTab
         case .themes: themesTab
         case .connections: connectionsTab
@@ -439,6 +444,47 @@ struct SettingsView: View {
             if !store.status.isEmpty { note(store.status) }
         } header: {
             sectionHeader("Thema's als bestanden", "doc.text")
+        }
+    }
+
+    // MARK: Tab: Groepen
+
+    @ViewBuilder
+    private var groupsTab: some View {
+        Section {
+            note("Een groep verschijnt als één icoon in de dock. Klik erop om de apps te zien. Je kunt ook rechtsklikken op een app in de dock en 'Voeg toe aan groep' kiezen.")
+            Button("Nieuwe groep") { prefs.newGroup(with: nil) }
+        } header: {
+            sectionHeader("Groepen", "folder")
+        }
+
+        ForEach($prefs.groups) { $g in
+            Section {
+                TextField("Naam", text: $g.name)
+                ForEach(g.members, id: \.self) { path in
+                    HStack {
+                        Image(nsImage: NSWorkspace.shared.icon(forFile: path))
+                            .resizable()
+                            .frame(width: 22, height: 22)
+                        Text(FileManager.default.displayName(atPath: path))
+                        Spacer()
+                        Button {
+                            prefs.remove(path, from: g.id)
+                        } label: {
+                            Image(systemName: "minus.circle")
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                }
+                Menu("Voeg app toe") {
+                    ForEach(dockModel.items.filter { $0.groupID == nil && $0.haEntity == nil && !$0.isTrash }) { app in
+                        Button(app.name) { prefs.add(app.id, to: g.id) }
+                    }
+                }
+                Button("Verwijder groep", role: .destructive) { prefs.delete(g.id) }
+            } header: {
+                sectionHeader(g.name, "folder")
+            }
         }
     }
 

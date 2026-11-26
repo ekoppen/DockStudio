@@ -10,6 +10,8 @@ vertraging, zodat het niet in beeld komt. Bij afsluiten wordt het echte Dock her
 
 ## Functies
 
+- **Groepen:** zet apps samen in één icoon (klik om uit te klappen). Indelen via Instellingen > Groepen of met rechtsklik op een app.
+- **Rechtermuisknop:** openen, tonen in Finder, verbergen/stoppen, toevoegen aan een groep, vastzetten of verwijderen uit de dock (alleen binnen Dokko, het echte Dock blijft ongemoeid).
 - **Thema's:** vorm, kleur, kleurverloop, glas-blur, rand, schaduw, marges, icoonvorm, labels.
   Zonder achtergrond kan ook, dan blijven alleen de iconen over.
 - **Positie:** vrij verticaal (ook negatief, deels onder de schermrand) en horizontaal.

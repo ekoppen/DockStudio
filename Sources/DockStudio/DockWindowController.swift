@@ -21,6 +21,8 @@ final class DockWindowController {
     private let store = ThemeStore.shared
     private let model = DockModel.shared
 
+    var panelFrame: NSRect? { panel?.frame }
+
     func start() {
         store.objectWillChange
             .merge(with: model.objectWillChange)
