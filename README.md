@@ -1,8 +1,10 @@
-# DockStudio
+<p align="center"><img src="Resources/banner.png" alt="Dokko" width="100%"></p>
 
-Een eigen, volledig themabare dock voor macOS, gebouwd met Swift en SwiftUI (macOS 13+).
+# Dokko
 
-macOS laat het echte Dock niet van kleur of vorm veranderen. DockStudio tekent daarom een
+Dokko is een eigen, volledig themabare dock voor macOS, gebouwd met Swift en SwiftUI (macOS 13+).
+
+macOS laat het echte Dock niet van kleur of vorm veranderen. Dokko tekent daarom een
 eigen dock-venster onderaan het scherm en zet het echte Dock op autohide met een enorme
 vertraging, zodat het niet in beeld komt. Bij afsluiten wordt het echte Dock hersteld.
 
@@ -30,7 +32,7 @@ Vereist: macOS 13 of nieuwer en het volledige **Xcode** (niet alleen de Command 
 ```
 sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 swift run              # snel proberen
-./build-app.sh         # maakt DockStudio.app (menubalk-app)
+./build-app.sh         # maakt Dokko.app (menubalk-app)
 ```
 
 Of open `Package.swift` in Xcode en druk op Run.
@@ -38,7 +40,7 @@ Of open `Package.swift` in Xcode en druk op Run.
 ## Rechten
 
 - **Toegankelijkheid:** nodig voor ruimte vrijhouden, slim verbergen en de volledig-scherm-detectie.
-  Bij `swift run` geef je dit aan Terminal, bij `DockStudio.app` aan DockStudio.
+  Bij `swift run` geef je dit aan Terminal, bij `Dokko.app` aan Dokko.
 - **Lokaal netwerk:** voor Home Assistant.
 - **Sleutelhanger:** het Home Assistant-token wordt daar bewaard, nooit in een bestand of in git.
 
@@ -77,7 +79,7 @@ killall Dock
 
 ## Beperkingen
 
-- Het systeem reserveert geen schermruimte voor DockStudio; vensters worden via de Toegankelijkheids-API
+- Het systeem reserveert geen schermruimte voor Dokko; vensters worden via de Toegankelijkheids-API
   bijgestuurd (ongeveer 3 keer per seconde), dus er kan een korte "sprong" zichtbaar zijn.
 - Werkt op het hoofdscherm. Bewegende wallpapers worden niet gelezen voor het palet.
 

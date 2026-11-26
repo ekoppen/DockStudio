@@ -10,6 +10,8 @@ final class DockWindowController {
     private var bag = Set<AnyCancellable>()
     private var systemDockHidden = false
     private var mouseMonitor: Any?
+    private var localMonitor: Any?
+    private var panelHidden = false
 
     // Slim verbergen
     private var wantsHidden = false
@@ -32,6 +34,11 @@ final class DockWindowController {
 
         mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { [weak self] _ in
             self?.mouseMoved()
+        }
+        // Zolang het venster muisevents accepteert komen die via de lokale monitor binnen.
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .mouseMoved) { [weak self] event in
+            self?.mouseMoved()
+            return event
         }
 
         apply()
@@ -89,10 +96,39 @@ final class DockWindowController {
             ctx.duration = store.theme.fadeDuration
             panel.animator().alphaValue = hide ? 0 : 1
         }
-        panel.ignoresMouseEvents = hide
+        panelHidden = hide
+        refreshHitTest()
+    }
+
+    /// Het venster is groter dan de zichtbare dock (ruimte voor vergroting, labels, schaduw).
+    /// Alleen op de dock zelf vangt het venster muisevents; daarboven gaat alles door naar de apps eronder.
+    private func refreshHitTest() {
+        guard let panel else { return }
+        let t = store.theme
+        let f = panel.frame
+        let loc = NSEvent.mouseLocation
+        let hovering = DockHover.shared.mouse != nil
+
+        let icon = CGFloat(t.iconSize)
+        let mag = CGFloat(max(t.magnification, 1))
+        let baseW = DockLayout.barWidth(t, count: model.items.count)
+        let extraX = hovering ? icon * 0.5 + icon * (mag - 1) * 1.5 : 6
+        let bottom = max(CGFloat(t.bottomMargin), 0)
+        let barTop = bottom + DockLayout.barHeight(t)
+        let top = barTop + (hovering ? DockLayout.overshoot(t) : 4)
+        let yMin = hovering ? f.minY : f.minY + max(bottom - 4, 0)
+        let rect = NSRect(x: f.midX - baseW / 2 - extraX, y: yMin,
+                          width: baseW + extraX * 2, height: f.minY + top - yMin)
+
+        let ignore = panelHidden || !rect.contains(loc)
+        if panel.ignoresMouseEvents != ignore {
+            panel.ignoresMouseEvents = ignore
+            if ignore { DockHover.shared.mouse = nil }
+        }
     }
 
     private func mouseMoved() {
+        refreshHitTest()
         guard wantsHidden, let panel, let screen = NSScreen.screens.first else { return }
         let loc = NSEvent.mouseLocation
         let f = panel.frame

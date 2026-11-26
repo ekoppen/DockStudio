@@ -1,5 +1,5 @@
 #!/bin/bash
-# Bouwt DockStudio.app (menubalk-app zonder eigen Dock-icoon)
+# Bouwt Dokko.app (menubalk-app zonder eigen Dock-icoon)
 # Gebruik: ./build-app.sh [versie]   (standaard 0.9)
 set -e
 VERSION="${1:-0.9}"
@@ -7,7 +7,7 @@ cd "$(dirname "$0")"
 
 swift build -c release
 
-APP="DockStudio.app"
+APP="Dokko.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
 cp .build/release/DockStudio "$APP/Contents/MacOS/DockStudio"
@@ -29,7 +29,7 @@ cat > "$APP/Contents/Info.plist" <<EOF
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleName</key><string>DockStudio</string>
+  <key>CFBundleName</key><string>Dokko</string>
   <key>CFBundleIdentifier</key><string>nl.doorkoppen.dockstudio</string>
   <key>CFBundleExecutable</key><string>DockStudio</string>
   <key>CFBundlePackageType</key><string>APPL</string>
@@ -39,7 +39,7 @@ cat > "$APP/Contents/Info.plist" <<EOF
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>LSUIElement</key><true/>
   <key>NSAppTransportSecurity</key><dict><key>NSAllowsArbitraryLoads</key><true/></dict>
-  <key>NSLocalNetworkUsageDescription</key><string>DockStudio verbindt met je Home Assistant op het lokale netwerk.</string>
+  <key>NSLocalNetworkUsageDescription</key><string>Dokko verbindt met je Home Assistant op het lokale netwerk.</string>
 </dict>
 </plist>
 EOF

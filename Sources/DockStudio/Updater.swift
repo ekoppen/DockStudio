@@ -133,7 +133,7 @@ final class Updater: ObservableObject {
         defer { busy = false }
         let appURL = Bundle.main.bundleURL
         guard appURL.pathExtension == "app" else {
-            status = "Updaten kan alleen vanuit een DockStudio.app (niet met swift run)."
+            status = "Updaten kan alleen vanuit een app-bundel (niet met swift run)."
             return
         }
         do {
@@ -155,11 +155,13 @@ final class Updater: ObservableObject {
                 status = "Uitpakken mislukt."
                 return
             }
-            let newApp = out.appendingPathComponent("DockStudio.app")
-            guard FileManager.default.fileExists(atPath: newApp.path) else {
-                status = "DockStudio.app zat niet in de download."
+            let found = (try? FileManager.default.contentsOfDirectory(atPath: out.path))?
+                .first(where: { $0.hasSuffix(".app") })
+            guard let appName = found else {
+                status = "Geen app gevonden in de download."
                 return
             }
+            let newApp = out.appendingPathComponent(appName)
             guard FileManager.default.isWritableFile(atPath: appURL.deletingLastPathComponent().path) else {
                 status = "Geen schrijfrechten op \(appURL.deletingLastPathComponent().path)."
                 return

@@ -332,7 +332,7 @@ struct SettingsView: View {
                 note("De dock verdwijnt als een venster erover ligt. Muis onderaan het scherm = dock terug.")
             }
             if !WindowAvoider.isTrusted {
-                Text("Toegang nodig: zet DockStudio (of Terminal, als je met swift run start) aan onder Privacy en beveiliging > Toegankelijkheid.")
+                Text("Toegang nodig: zet Dokko (of Terminal, als je met swift run start) aan onder Privacy en beveiliging > Toegankelijkheid.")
                     .font(.caption).foregroundStyle(.orange)
                 HStack {
                     Button("Vraag toegang") { WindowAvoider.requestTrust() }

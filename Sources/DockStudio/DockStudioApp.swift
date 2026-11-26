@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// Icoon voor DockStudio in Cmd-Tab (getekend, geen bestand nodig).
+/// Icoon voor Dokko in Cmd-Tab (getekend, geen bestand nodig).
 enum AppIcon {
     static func make() -> NSImage {
         if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
@@ -39,7 +39,7 @@ enum AppIcon {
 /// Hulp voor het instellingenvenster.
 enum SettingsWindow {
     static func isSettings(_ w: NSWindow) -> Bool {
-        w.title == "DockStudio" && !(w is NSPanel)
+        w.title == "Dokko" && !(w is NSPanel)
     }
 
     /// Past "vastpinnen" en gedrag bij wisselen van app toe op het instellingenvenster.
@@ -58,7 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)   // geen eigen icoon in het Dock
         NSApp.applicationIconImage = AppIcon.make()
 
-        // Zolang het instellingenvenster open is, tonen we DockStudio als gewone app
+        // Zolang het instellingenvenster open is, tonen we Dokko als gewone app
         // (Cmd-Tab, activeren), zodat het venster niet zoekraakt bij het wisselen van app.
         let nc = NotificationCenter.default
         nc.addObserver(forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main) { n in
@@ -101,11 +101,11 @@ struct DockStudioApp: App {
     @ObservedObject private var store = ThemeStore.shared
 
     var body: some Scene {
-        MenuBarExtra("DockStudio", systemImage: "dock.rectangle") {
+        MenuBarExtra("Dokko", systemImage: "dock.rectangle") {
             MenuContent(store: store)
         }
 
-        Window("DockStudio", id: "settings") {
+        Window("Dokko", id: "settings") {
             SettingsView(store: store)
         }
     }
@@ -132,7 +132,7 @@ struct MenuContent: View {
         Button("Herstel echte Dock") {
             DockWindowController.shared.restoreNow()
         }
-        Button("Stop DockStudio") {
+        Button("Stop Dokko") {
             NSApp.terminate(nil)
         }
     }

@@ -54,8 +54,8 @@ svg=f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1
 <rect x="152" y="570" width="720" height="160" rx="70" fill="url(#pill)"/>
 <rect x="153" y="571" width="718" height="158" rx="69" fill="none" stroke="url(#pillStroke)" stroke-width="2.5"/>
 <g filter="url(#ds)">{t}</g>
-<path d="{star(512,614,50,12)}" fill="#fff" opacity=".95"/>
-<path d="{star(570,566,18,4.5)}" fill="#fff" opacity=".8"/>
+<rect x="470" y="572" width="70" height="70" rx="18" fill="none" stroke="#fff" stroke-width="11" opacity=".7"/>
+<rect x="486" y="588" width="70" height="70" rx="18" fill="#fff" opacity=".96"/>
 </g></g>
 <path d="{body}" fill="none" stroke="#fff" stroke-opacity=".28" stroke-width="3"/>
 </svg>'''
