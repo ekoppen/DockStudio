@@ -5,10 +5,53 @@ import UniformTypeIdentifiers
 
 // MARK: Gegevens
 
+enum GroupLayout: String, Codable, CaseIterable { case grid, list }
+enum GroupBackground: String, Codable, CaseIterable { case theme, glass, none }
+
+/// Opmaak van de inhoud van een groep.
+struct GroupStyle: Codable, Equatable {
+    var layout: GroupLayout = .grid
+    var columns: Int = 0            // 0 = automatisch
+    var iconSize: Double = 56
+    var showNames: Bool = true
+    var background: GroupBackground = .theme
+
+    enum CodingKeys: String, CodingKey { case layout, columns, iconSize, showNames, background }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        layout = (try? c.decode(GroupLayout.self, forKey: .layout)) ?? .grid
+        columns = (try? c.decode(Int.self, forKey: .columns)) ?? 0
+        iconSize = (try? c.decode(Double.self, forKey: .iconSize)) ?? 56
+        showNames = (try? c.decode(Bool.self, forKey: .showNames)) ?? true
+        background = (try? c.decode(GroupBackground.self, forKey: .background)) ?? .theme
+    }
+}
+
 struct DockGroup: Codable, Identifiable, Equatable {
     var id = UUID()
     var name: String
-    var members: [String]   // app-paden
+    var members: [String]   // app-paden of "ha:<entity_id>"
+    var style = GroupStyle()
+
+    enum CodingKeys: String, CodingKey { case id, name, members, style }
+
+    init(id: UUID = UUID(), name: String, members: [String], style: GroupStyle = GroupStyle()) {
+        self.id = id
+        self.name = name
+        self.members = members
+        self.style = style
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = (try? c.decode(UUID.self, forKey: .id)) ?? UUID()
+        name = (try? c.decode(String.self, forKey: .name)) ?? "Groep"
+        members = (try? c.decode([String].self, forKey: .members)) ?? []
+        style = (try? c.decode(GroupStyle.self, forKey: .style)) ?? GroupStyle()
+    }
 }
 
 /// Eigen indeling van Dokko: groepen en welke apps getoond worden (los van het echte Dock).
@@ -244,7 +287,8 @@ final class GroupPopup {
         close()
 
         let theme = ThemeStore.shared.theme
-        let size = GroupPopupView.size(count: item.members.count)
+        let style = DockPrefs.shared.groups.first(where: { $0.id == gid })?.style ?? GroupStyle()
+        let size = GroupPopupView.size(count: item.members.count, style: style)
         let view = GroupPopupView(initial: item, theme: theme) { [weak self] member in
             DockModel.shared.open(member)
             self?.close()
@@ -299,51 +343,81 @@ struct GroupPopupView: View {
     let theme: DockTheme
     let onOpen: (DockItem) -> Void
     @ObservedObject var model = DockModel.shared
+    @ObservedObject var prefs = DockPrefs.shared
+
+    static let pad: CGFloat = 16
+    static let titleHeight: CGFloat = 26
 
     /// Actuele groep uit het model, zodat het venster meebeweegt na het verslepen.
     private var group: DockItem {
         model.items.first(where: { $0.groupID == initial.groupID }) ?? initial
     }
 
-    static let cell = CGSize(width: 92, height: 94)
-    static let pad: CGFloat = 16
-    static let titleHeight: CGFloat = 26
+    private var style: GroupStyle {
+        prefs.groups.first(where: { $0.id == initial.groupID })?.style ?? GroupStyle()
+    }
 
-    static func columns(_ n: Int) -> Int { max(1, min(n, 4)) }
+    static func metrics(count n: Int, style s: GroupStyle) -> (cols: Int, cell: CGSize) {
+        let icon = CGFloat(s.iconSize)
+        switch s.layout {
+        case .grid:
+            let cols = s.columns > 0 ? min(s.columns, max(n, 1)) : max(1, min(n, 4))
+            return (cols, CGSize(width: max(icon + 36, 72), height: icon + (s.showNames ? 38 : 20)))
+        case .list:
+            return (1, CGSize(width: icon + (s.showNames ? 190 : 24), height: max(icon, 28) + 12))
+        }
+    }
 
-    static func size(count n: Int) -> CGSize {
-        let cols = columns(n)
-        let rows = max(1, (n + cols - 1) / cols)
-        return CGSize(width: CGFloat(cols) * cell.width + pad * 2,
-                      height: CGFloat(rows) * cell.height + pad * 2 + titleHeight)
+    static func size(count n: Int, style s: GroupStyle) -> CGSize {
+        let m = metrics(count: n, style: s)
+        let rows = max(1, (n + m.cols - 1) / m.cols)
+        return CGSize(width: CGFloat(m.cols) * m.cell.width + pad * 2,
+                      height: CGFloat(rows) * m.cell.height + pad * 2 + titleHeight)
     }
 
     var body: some View {
-        let cols = Self.columns(group.members.count)
+        let g = group
+        let st = style
+        let m = Self.metrics(count: g.members.count, style: st)
+        let total = Self.size(count: g.members.count, style: st)
         VStack(spacing: 0) {
-            Text(group.name)
+            Text(g.name)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundColor(.white.opacity(0.9))
+                .shadow(color: .black.opacity(0.5), radius: 2)
                 .frame(height: Self.titleHeight)
-            LazyVGrid(columns: Array(repeating: GridItem(.fixed(Self.cell.width), spacing: 0), count: cols),
+            LazyVGrid(columns: Array(repeating: GridItem(.fixed(m.cell.width), spacing: 0), count: m.cols),
                       spacing: 0) {
-                ForEach(group.members) { m in
-                    GroupCell(item: m, theme: theme, groupID: group.groupID) { onOpen(m) }
+                ForEach(g.members) { item in
+                    GroupCell(item: item, theme: theme, groupID: g.groupID, style: st, cell: m.cell) {
+                        onOpen(item)
+                    }
                 }
             }
         }
         .padding(Self.pad)
-        .background {
+        .background { backdrop(st) }
+        .frame(width: total.width, height: total.height)
+    }
+
+    @ViewBuilder
+    private func backdrop(_ st: GroupStyle) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 24, style: .continuous)
+        switch st.background {
+        case .theme:
             ZStack {
                 VisualEffectBlur()
                 theme.colorA.color.opacity(0.45)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(Color.white.opacity(0.25), lineWidth: 1))
+            .clipShape(shape)
+            .overlay(shape.stroke(Color.white.opacity(0.25), lineWidth: 1))
+        case .glass:
+            VisualEffectBlur()
+                .clipShape(shape)
+                .overlay(shape.stroke(Color.white.opacity(0.25), lineWidth: 1))
+        case .none:
+            Color.clear
         }
-        .frame(width: Self.size(count: group.members.count).width,
-               height: Self.size(count: group.members.count).height)
     }
 }
 
@@ -351,28 +425,61 @@ struct GroupCell: View {
     let item: DockItem
     let theme: DockTheme
     let groupID: UUID?
+    let style: GroupStyle
+    let cell: CGSize
     let onTap: () -> Void
     @State private var hovering = false
 
+    private var icon: some View {
+        Image(nsImage: item.icon)
+            .resizable()
+            .interpolation(.high)
+            .frame(width: CGFloat(style.iconSize), height: CGFloat(style.iconSize))
+            .scaleEffect(hovering && style.layout == .grid ? 1.12 : 1)
+            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: hovering)
+    }
+
+    private var dot: some View {
+        Circle()
+            .fill(theme.indicatorColor.color)
+            .frame(width: 4, height: 4)
+            .opacity(item.isRunning ? 1 : 0)
+    }
+
     var body: some View {
-        VStack(spacing: 4) {
-            Image(nsImage: item.icon)
-                .resizable()
-                .interpolation(.high)
-                .frame(width: 56, height: 56)
-                .scaleEffect(hovering ? 1.12 : 1)
-                .animation(.spring(response: 0.25, dampingFraction: 0.7), value: hovering)
-            Text(item.name)
-                .font(.system(size: 11))
-                .foregroundColor(.white)
-                .lineLimit(1)
-                .frame(width: GroupPopupView.cell.width - 8)
-            Circle()
-                .fill(theme.indicatorColor.color)
-                .frame(width: 4, height: 4)
-                .opacity(item.isRunning ? 1 : 0)
+        Group {
+            if style.layout == .list {
+                HStack(spacing: 10) {
+                    icon
+                    if style.showNames {
+                        Text(item.name)
+                            .font(.system(size: 13))
+                            .foregroundColor(.white)
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                        dot
+                    }
+                }
+                .padding(.horizontal, 8)
+                .frame(width: cell.width, height: cell.height, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.white.opacity(hovering ? 0.14 : 0)))
+            } else {
+                VStack(spacing: 4) {
+                    icon
+                    if style.showNames {
+                        Text(item.name)
+                            .font(.system(size: 11))
+                            .foregroundColor(.white)
+                            .shadow(color: .black.opacity(0.5), radius: 2)
+                            .lineLimit(1)
+                            .frame(width: cell.width - 8)
+                    }
+                    dot
+                }
+                .frame(width: cell.width, height: cell.height)
+            }
         }
-        .frame(width: GroupPopupView.cell.width, height: GroupPopupView.cell.height)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture(perform: onTap)

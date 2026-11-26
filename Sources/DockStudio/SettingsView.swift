@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 enum SettingsTab: String, CaseIterable, Identifiable {
     case dock, icons, groups, behavior, themes, connections
@@ -40,6 +41,8 @@ struct SettingsView: View {
     @State private var tab: SettingsTab = .dock
     @State private var tokenInput = ""
     @State private var entityFilter = ""
+    @State private var haPickerGroup: UUID?
+    @State private var groupHAFilter = ""
     @FocusState private var searchFocused: Bool
     @State private var paletteIndex = 0
     @State private var paletteStyle: DockStyle = .glass
@@ -461,6 +464,23 @@ struct SettingsView: View {
         ForEach($prefs.groups) { $g in
             Section {
                 TextField("Naam", text: $g.name)
+                Picker("Weergave", selection: $g.style.layout) {
+                    Text("Raster").tag(GroupLayout.grid)
+                    Text("Lijst").tag(GroupLayout.list)
+                }
+                .pickerStyle(.segmented)
+                if g.style.layout == .grid {
+                    Stepper(value: $g.style.columns, in: 0...8) {
+                        Text("Kolommen: " + (g.style.columns == 0 ? "automatisch" : "\(g.style.columns)"))
+                    }
+                }
+                slider("Icoongrootte", $g.style.iconSize, 28...100)
+                Toggle("Namen tonen", isOn: $g.style.showNames)
+                Picker("Achtergrond", selection: $g.style.background) {
+                    Text("Thema").tag(GroupBackground.theme)
+                    Text("Glas").tag(GroupBackground.glass)
+                    Text("Geen").tag(GroupBackground.none)
+                }
                 ForEach(g.members, id: \.self) { path in
                     HStack {
                         Image(nsImage: memberIcon(path))
@@ -495,6 +515,17 @@ struct SettingsView: View {
                         Button(app.name) { prefs.add(app.id, to: g.id) }
                     }
                 }
+                Button("Kies app van schijf…") { pickApps(for: g.id) }
+                Button("Zoek Home Assistant-actie…") {
+                    groupHAFilter = ""
+                    haPickerGroup = g.id
+                }
+                .popover(isPresented: Binding(
+                    get: { haPickerGroup == g.id },
+                    set: { on in if !on, haPickerGroup == g.id { haPickerGroup = nil } }
+                ), arrowEdge: .bottom) {
+                    haPicker(for: g.id)
+                }
                 Button("Verwijder groep", role: .destructive) { prefs.delete(g.id) }
             } header: {
                 sectionHeader(g.name, "folder")
@@ -505,7 +536,71 @@ struct SettingsView: View {
     private func haEntity(for path: String) -> HADockEntity? {
         guard path.hasPrefix("ha:") else { return nil }
         let id = String(path.dropFirst(3))
-        return ha.config.dockEntities.first { $0.id == id }
+        return (ha.config.dockEntities + (ha.config.groupEntities ?? [])).first { $0.id == id }
+    }
+
+    private func pickApps(for gid: UUID) {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.application]
+        panel.allowsMultipleSelection = true
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.message = "Kies de apps voor deze groep"
+        NSApp.activate(ignoringOtherApps: true)
+        if panel.runModal() == .OK {
+            for u in panel.urls { prefs.add(u.standardizedFileURL.path, to: gid) }
+        }
+    }
+
+    private func haPicker(for gid: UUID) -> some View {
+        let words = groupHAFilter.lowercased().split(separator: " ").map(String.init)
+        let matches: [HAEntity] = words.isEmpty ? [] : Array(ha.available.filter { e in
+            let hay = (e.id + " " + e.name).lowercased()
+            return words.allSatisfy { hay.contains($0) }
+        }.prefix(8))
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                TextField("Zoek entiteit, bijv. woonkamer", text: $groupHAFilter)
+                    .textFieldStyle(.roundedBorder)
+                Button { ha.fetchEntities() } label: { Image(systemName: "arrow.clockwise") }
+                    .buttonStyle(.borderless)
+                    .help("Entiteiten opnieuw ophalen")
+            }
+            if ha.available.isEmpty {
+                Text(ha.tokenSaved ? "Nog geen entiteiten. Klik op vernieuwen."
+                                   : "Sla eerst een token op onder Koppelingen.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if words.isEmpty {
+                Text("Typ om te zoeken in \(ha.available.count) entiteiten.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if matches.isEmpty {
+                Text("Geen resultaten.").font(.caption).foregroundStyle(.secondary)
+            }
+            ForEach(matches) { e in
+                Button {
+                    ha.addGroupEntity(e)
+                    prefs.add("ha:\(e.id)", to: gid)
+                    haPickerGroup = nil
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: HAIcon.symbol(for: e.domain)).frame(width: 22)
+                        VStack(alignment: .leading) {
+                            Text(e.name)
+                            Text(e.id).font(.caption2).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(12)
+        .frame(width: 340)
+        .onAppear {
+            if ha.available.isEmpty && ha.tokenSaved && ha.config.enabled { ha.fetchEntities() }
+        }
     }
 
     private func memberName(_ path: String) -> String {

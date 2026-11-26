@@ -45,6 +45,10 @@ final class DockModel: ObservableObject {
         let hiddenPaths = Set(DockPrefs.shared.hidden)
         urls += Self.pinnedAppURLs().filter { !hiddenPaths.contains($0.standardizedFileURL.path) }
         urls += DockPrefs.shared.extra.map { URL(fileURLWithPath: $0) }
+        // Apps die alleen in een groep staan
+        for g in DockPrefs.shared.groups {
+            for m in g.members where !m.hasPrefix("ha:") { urls.append(URL(fileURLWithPath: m)) }
+        }
 
         // Draaiende apps die niet vastgepind zijn
         let known = Set(urls.map { $0.standardizedFileURL.path })
@@ -73,7 +77,13 @@ final class DockModel: ObservableObject {
         // Home Assistant-items
         let ha = HAStore.shared
         if ha.config.enabled {
-            for e in ha.config.dockEntities {
+            let referenced = Set(DockPrefs.shared.groups.flatMap { $0.members }.filter { $0.hasPrefix("ha:") })
+            var haList = ha.config.dockEntities
+            for e in ha.config.groupEntities ?? []
+            where referenced.contains("ha:\(e.id)") && !haList.contains(where: { $0.id == e.id }) {
+                haList.append(e)
+            }
+            for e in haList {
                 let on = ha.isOn(e.id)
                 result.append(DockItem(
                     id: "ha:\(e.id)", name: e.name, url: URL(fileURLWithPath: "/"),

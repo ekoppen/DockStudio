@@ -63,6 +63,7 @@ struct HAConfig: Codable, Equatable {
     var enabled = false
     var baseURL = "http://homeassistant.local:8123"
     var dockEntities: [HADockEntity] = []
+    var groupEntities: [HADockEntity]? = nil   // alleen in een groep gebruikt
     var syncTheme = false
     var themeLights: [String] = []
     var themeScene = ""
@@ -123,7 +124,8 @@ final class HAStore: ObservableObject {
     @Published var config: HAConfig {
         didSet {
             save()
-            if oldValue.enabled != config.enabled || oldValue.dockEntities != config.dockEntities {
+            if oldValue.enabled != config.enabled || oldValue.dockEntities != config.dockEntities
+                || oldValue.groupEntities != config.groupEntities {
                 DockModel.shared.reload()
             }
         }
@@ -257,9 +259,9 @@ final class HAStore: ObservableObject {
     }
 
     private func poll() {
-        guard config.enabled, tokenSaved, !config.dockEntities.isEmpty, !polling else { return }
+        let ids = (config.dockEntities + (config.groupEntities ?? [])).map { $0.id }
+        guard config.enabled, tokenSaved, !ids.isEmpty, !polling else { return }
         polling = true
-        let ids = config.dockEntities.map { $0.id }
         Task {
             var result: [String: String] = [:]
             for id in ids {
@@ -276,6 +278,17 @@ final class HAStore: ObservableObject {
                 }
             }
         }
+    }
+
+    /// Zet een entiteit klaar voor gebruik in een groep (zonder dat hij los in de dock komt).
+    func addGroupEntity(_ e: HAEntity) {
+        guard !config.dockEntities.contains(where: { $0.id == e.id }) else { return }
+        var list = config.groupEntities ?? []
+        if !list.contains(where: { $0.id == e.id }) {
+            list.append(HADockEntity(id: e.id, name: e.name))
+            config.groupEntities = list
+        }
+        poll()
     }
 
     // MARK: Acties
