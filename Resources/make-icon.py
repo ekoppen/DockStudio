@@ -9,8 +9,8 @@ def squircle(cx,cy,r,n=5,steps=360):
         pts.append(f"{x:.1f},{y:.1f}")
     return "M"+" L".join(pts)+"Z"
 body=squircle(512,512,412)
-tiles=[(221,72,'#2dd4bf','#0ea5a4'),(315,100,'#fbbf24','#f97316'),(437,150,'#ff6fb5','#c026d3'),(609,100,'#60a5fa','#4f46e5'),(731,72,'#a3e635','#16a34a')]
-bottom=690
+tiles=[(182,84,'#2dd4bf','#0ea5a4'),(288,116,'#fbbf24','#f97316'),(426,172,'#ff6fb5','#c026d3'),(620,116,'#60a5fa','#4f46e5'),(758,84,'#a3e635','#16a34a')]
+bottom=700
 t=""
 for x,s,a,b in tiles:
     y=bottom-s; r=s*0.23
@@ -46,19 +46,16 @@ svg=f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1
 <path d="{body}" fill="url(#bg)"/>
 <g clip-path="url(#clip)">
  <rect width="1024" height="1024" fill="url(#top)"/>
- <ellipse cx="512" cy="640" rx="330" ry="200" fill="url(#glow)" filter="url(#soft)"/>
+ <ellipse cx="512" cy="560" rx="360" ry="190" fill="url(#glow)" filter="url(#soft)"/>
  <circle cx="780" cy="250" r="150" fill="#7c4dff" opacity=".35" filter="url(#soft)"/>
 </g>
-<g transform="translate(512,512) scale(1.12) translate(-512,-548)">
-<rect x="170" y="560" width="684" height="150" rx="64" fill="#0a0420" opacity=".35" filter="url(#sh)" transform="translate(0,14)"/>
-<rect x="170" y="560" width="684" height="150" rx="64" fill="url(#pill)"/>
-<rect x="171" y="561" width="682" height="148" rx="63" fill="none" stroke="url(#pillStroke)" stroke-width="2.5"/>
+<g transform="translate(512,512) scale(1.0) translate(-512,-630)">
+<rect x="152" y="570" width="720" height="160" rx="70" fill="#0a0420" opacity=".35" filter="url(#sh)" transform="translate(0,14)"/>
+<rect x="152" y="570" width="720" height="160" rx="70" fill="url(#pill)"/>
+<rect x="153" y="571" width="718" height="158" rx="69" fill="none" stroke="url(#pillStroke)" stroke-width="2.5"/>
 <g filter="url(#ds)">{t}</g>
-<path d="{star(512,615,44,11)}" fill="#fff" opacity=".95"/>
-<path d="{star(560,578,16,4)}" fill="#fff" opacity=".8"/>
-<g transform="translate(590,415) rotate(-8)" filter="url(#ds)">
- <path d="M0,0 L0,118 L30,92 L50,138 L72,128 L52,84 L92,84 Z" fill="#fff" stroke="#1a1040" stroke-width="7" stroke-linejoin="round"/>
-</g>
+<path d="{star(512,614,50,12)}" fill="#fff" opacity=".95"/>
+<path d="{star(570,566,18,4.5)}" fill="#fff" opacity=".8"/>
 </g>
 <path d="{body}" fill="none" stroke="#fff" stroke-opacity=".28" stroke-width="3"/>
 </svg>'''
