@@ -4,6 +4,10 @@ import AppKit
 /// Icoon voor DockStudio in Cmd-Tab (getekend, geen bestand nodig).
 enum AppIcon {
     static func make() -> NSImage {
+        if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
+           let image = NSImage(contentsOf: url) {
+            return image
+        }
         let size = NSSize(width: 512, height: 512)
         let img = NSImage(size: size)
         img.lockFocus()
