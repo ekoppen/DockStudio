@@ -17,7 +17,10 @@ final class ThemeStore: ObservableObject {
     @Published var selectedID: UUID {
         didSet {
             save()
-            if oldValue != selectedID { HookRunner.run(theme: theme) }
+            if oldValue != selectedID {
+                HookRunner.run(theme: theme)
+                if HAStore.shared.config.iconStyle?.useThemeAccent == true { DockModel.shared.reload() }
+            }
         }
     }
     @Published var dockEnabled: Bool { didSet { save() } }

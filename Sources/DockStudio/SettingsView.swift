@@ -42,6 +42,7 @@ struct SettingsView: View {
     @State private var tokenInput = ""
     @State private var entityFilter = ""
     @State private var haPickerGroup: UUID?
+    @State private var haStyleEntity: String?
     @State private var groupHAFilter = ""
     @FocusState private var searchFocused: Bool
     @State private var paletteIndex = 0
@@ -533,6 +534,116 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: HA-iconen
+
+    private var haStyleBinding: Binding<HAIconStyle> {
+        Binding(get: { ha.config.iconStyle ?? HAIconStyle() },
+                set: { ha.config.iconStyle = $0 })
+    }
+
+    private func haColorBinding(_ kp: WritableKeyPath<HAIconStyle, RGBA>) -> Binding<Color> {
+        Binding(get: { (ha.config.iconStyle ?? HAIconStyle())[keyPath: kp].color },
+                set: {
+                    var st = ha.config.iconStyle ?? HAIconStyle()
+                    st[keyPath: kp] = RGBA(color: $0)
+                    ha.config.iconStyle = st
+                })
+    }
+
+    @ViewBuilder
+    private var haStyleSection: some View {
+        HStack(spacing: 14) {
+            ForEach(Array([("light", true), ("light", false), ("switch", true), ("scene", true),
+                           ("lock", false), ("fan", true)].enumerated()), id: \.offset) { _, s in
+                Image(nsImage: HAIcon.make(domain: s.0, on: s.1))
+                    .resizable()
+                    .frame(width: 40, height: 40)
+            }
+        }
+        Picker("Achtergrond van het icoon", selection: haStyleBinding.tile) {
+            Text("Afgerond").tag(HATile.rounded)
+            Text("Cirkel").tag(HATile.circle)
+            Text("Alleen symbool").tag(HATile.none)
+        }
+        .pickerStyle(.segmented)
+        Toggle("Kleur 'aan' uit het thema-accent", isOn: haStyleBinding.useThemeAccent)
+        if !haStyleBinding.wrappedValue.useThemeAccent {
+            ColorPicker("Kleur als aan", selection: haColorBinding(\.onColor), supportsOpacity: false)
+        }
+        ColorPicker("Kleur als uit", selection: haColorBinding(\.offColor), supportsOpacity: false)
+        Toggle("Kleurverloop", isOn: haStyleBinding.gradient)
+        slider("Grootte symbool", haStyleBinding.glyphSize, 0.3...0.8, decimals: 2)
+        note("Per entiteit kun je een eigen symbool en kleur kiezen met het penseel-icoon in de lijst hieronder.")
+    }
+
+    private func styleButton(_ id: String) -> some View {
+        Button { haStyleEntity = id } label: { Image(systemName: "paintbrush") }
+            .buttonStyle(.borderless)
+            .help("Symbool en kleur aanpassen")
+            .popover(isPresented: Binding(
+                get: { haStyleEntity == id },
+                set: { on in if !on, haStyleEntity == id { haStyleEntity = nil } }
+            ), arrowEdge: .bottom) {
+                entityStyleEditor(id)
+            }
+    }
+
+    private func updateEntity(_ id: String, _ change: (inout HADockEntity) -> Void) {
+        if let i = ha.config.dockEntities.firstIndex(where: { $0.id == id }) {
+            change(&ha.config.dockEntities[i])
+        } else if var list = ha.config.groupEntities, let i = list.firstIndex(where: { $0.id == id }) {
+            change(&list[i])
+            ha.config.groupEntities = list
+        }
+    }
+
+    private func entityStyleEditor(_ id: String) -> some View {
+        let e = (ha.config.dockEntities + (ha.config.groupEntities ?? [])).first { $0.id == id }
+        let symbols = ["lightbulb.fill", "lamp.floor.fill", "lamp.desk.fill", "power", "fan.fill", "lock.fill",
+                       "sparkles", "moon.fill", "sun.max.fill", "tv.fill", "speaker.wave.2.fill",
+                       "thermometer.medium", "door.garage.closed", "blinds.horizontal.closed",
+                       "bed.double.fill", "sofa.fill", "house.fill", "bolt.fill"]
+        return VStack(alignment: .leading, spacing: 10) {
+            Text(e?.name ?? id).font(.headline)
+            HStack {
+                Image(nsImage: HAIcon.make(domain: e?.domain ?? "switch", on: true,
+                                           symbol: e?.symbol, color: e?.color))
+                    .resizable().frame(width: 44, height: 44)
+                Image(nsImage: HAIcon.make(domain: e?.domain ?? "switch", on: false,
+                                           symbol: e?.symbol, color: e?.color))
+                    .resizable().frame(width: 44, height: 44)
+            }
+            TextField("SF Symbol-naam, bijv. lamp.floor.fill", text: Binding(
+                get: { e?.symbol ?? "" },
+                set: { v in updateEntity(id) { $0.symbol = v.isEmpty ? nil : v } }
+            ))
+            .textFieldStyle(.roundedBorder)
+            LazyVGrid(columns: Array(repeating: GridItem(.fixed(34)), count: 6), spacing: 6) {
+                ForEach(symbols, id: \.self) { name in
+                    Button { updateEntity(id) { $0.symbol = name } } label: {
+                        Image(systemName: name).frame(width: 30, height: 26)
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+            Toggle("Eigen kleur", isOn: Binding(
+                get: { e?.color != nil },
+                set: { on in updateEntity(id) { $0.color = on ? (ha.config.iconStyle ?? HAIconStyle()).onColor : nil } }
+            ))
+            if e?.color != nil {
+                ColorPicker("Kleur als aan", selection: Binding(
+                    get: { e?.color?.color ?? .yellow },
+                    set: { c in updateEntity(id) { $0.color = RGBA(color: c) } }
+                ), supportsOpacity: false)
+            }
+            Button("Zet terug naar standaard") {
+                updateEntity(id) { $0.symbol = nil; $0.color = nil }
+            }
+        }
+        .padding(14)
+        .frame(width: 280)
+    }
+
     private func haEntity(for path: String) -> HADockEntity? {
         guard path.hasPrefix("ha:") else { return nil }
         let id = String(path.dropFirst(3))
@@ -610,7 +721,8 @@ struct SettingsView: View {
 
     private func memberIcon(_ path: String) -> NSImage {
         if path.hasPrefix("ha:") {
-            return HAIcon.make(domain: haEntity(for: path)?.domain ?? "switch", on: false)
+            let e = haEntity(for: path)
+            return HAIcon.make(domain: e?.domain ?? "switch", on: false, symbol: e?.symbol, color: e?.color)
         }
         return NSWorkspace.shared.icon(forFile: path)
     }
@@ -656,12 +768,30 @@ struct SettingsView: View {
         }
 
         Section {
+            haStyleSection
+        } header: {
+            sectionHeader("Uiterlijk van HA-iconen", "paintbrush")
+        }
+
+        Section {
             if ha.config.dockEntities.isEmpty && ha.config.themeLights.isEmpty && ha.config.themeScene.isEmpty {
                 note("Nog niets gekozen. Zoek hieronder een lamp, schakelaar of scène.")
             }
             ForEach(ha.config.dockEntities) { e in
-                selectedRow(symbol: HAIcon.symbol(for: e.domain), title: e.name, subtitle: e.id, badge: "Dock") {
-                    ha.config.dockEntities.removeAll { $0.id == e.id }
+                HStack {
+                    selectedRow(symbol: e.symbol ?? HAIcon.symbol(for: e.domain), title: e.name, subtitle: e.id, badge: "Dock") {
+                        ha.config.dockEntities.removeAll { $0.id == e.id }
+                    }
+                    styleButton(e.id)
+                }
+            }
+            ForEach(ha.config.groupEntities ?? []) { e in
+                HStack {
+                    selectedRow(symbol: e.symbol ?? HAIcon.symbol(for: e.domain), title: e.name, subtitle: e.id, badge: "Groep") {
+                        ha.config.groupEntities?.removeAll { $0.id == e.id }
+                        for g in prefs.groups { prefs.remove("ha:\(e.id)", from: g.id) }
+                    }
+                    styleButton(e.id)
                 }
             }
             ForEach(ha.config.themeLights, id: \.self) { id in

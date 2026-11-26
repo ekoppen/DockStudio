@@ -50,6 +50,8 @@ enum HAThemeColor: String, Codable, CaseIterable, Identifiable {
 struct HADockEntity: Codable, Equatable, Identifiable {
     var id: String          // entity_id, bijv. light.woonkamer
     var name: String
+    var symbol: String? = nil   // eigen SF Symbol
+    var color: RGBA? = nil      // eigen "aan"-kleur
     var domain: String { String(id.split(separator: ".").first ?? "") }
 }
 
@@ -59,11 +61,40 @@ struct HAEntity: Identifiable, Equatable {
     var domain: String { String(id.split(separator: ".").first ?? "") }
 }
 
+enum HATile: String, Codable, CaseIterable {
+    case rounded, circle, none
+}
+
+/// Uiterlijk van alle Home Assistant-iconen in de dock.
+struct HAIconStyle: Codable, Equatable {
+    var tile: HATile = .rounded
+    var onColor = RGBA(1.0, 0.78, 0.24)
+    var offColor = RGBA(0.30, 0.33, 0.38)
+    var gradient = true
+    var glyphSize = 0.55
+    var useThemeAccent = false
+
+    enum CodingKeys: String, CodingKey { case tile, onColor, offColor, gradient, glyphSize, useThemeAccent }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        tile = (try? c.decode(HATile.self, forKey: .tile)) ?? .rounded
+        onColor = (try? c.decode(RGBA.self, forKey: .onColor)) ?? RGBA(1.0, 0.78, 0.24)
+        offColor = (try? c.decode(RGBA.self, forKey: .offColor)) ?? RGBA(0.30, 0.33, 0.38)
+        gradient = (try? c.decode(Bool.self, forKey: .gradient)) ?? true
+        glyphSize = (try? c.decode(Double.self, forKey: .glyphSize)) ?? 0.55
+        useThemeAccent = (try? c.decode(Bool.self, forKey: .useThemeAccent)) ?? false
+    }
+}
+
 struct HAConfig: Codable, Equatable {
     var enabled = false
     var baseURL = "http://homeassistant.local:8123"
     var dockEntities: [HADockEntity] = []
     var groupEntities: [HADockEntity]? = nil   // alleen in een groep gebruikt
+    var iconStyle: HAIconStyle? = nil
     var syncTheme = false
     var themeLights: [String] = []
     var themeScene = ""
@@ -101,15 +132,55 @@ enum HAIcon {
         }
     }
 
-    static func make(domain: String, on: Bool) -> NSImage {
-        let base = NSImage(systemSymbolName: symbol(for: domain), accessibilityDescription: nil)
+    private static func ns(_ c: RGBA) -> NSColor {
+        NSColor(srgbRed: c.r, green: c.g, blue: c.b, alpha: c.a)
+    }
+
+    /// Tekent het icoon van een HA-item: gekleurde tegel met symbool.
+    static func make(domain: String, on: Bool, symbol: String? = nil, color: RGBA? = nil) -> NSImage {
+        let st = HAStore.shared.config.iconStyle ?? HAIconStyle()
+        let name = (symbol?.isEmpty == false ? symbol! : Self.symbol(for: domain))
+        var onColor = color ?? st.onColor
+        if color == nil && st.useThemeAccent {
+            onColor = ThemeStore.shared.theme.effectivePalette.ac
+        }
+        let tile = ns(on ? onColor : st.offColor)
+        let lum = 0.299 * tile.redComponent + 0.587 * tile.greenComponent + 0.114 * tile.blueComponent
+        let glyph: NSColor = st.tile == .none ? tile : (lum > 0.62 ? NSColor(white: 0.12, alpha: 0.92) : .white)
+
+        let s: CGFloat = 256
+        let base = NSImage(systemSymbolName: name, accessibilityDescription: nil)
             ?? NSImage(systemSymbolName: "house.fill", accessibilityDescription: nil)
             ?? NSImage()
-        let color: NSColor = on ? .systemYellow : .systemGray
-        let cfg = NSImage.SymbolConfiguration(pointSize: 40, weight: .semibold)
-            .applying(NSImage.SymbolConfiguration(paletteColors: [color]))
-        let img = base.withSymbolConfiguration(cfg) ?? base
-        img.isTemplate = false
+        let cfg = NSImage.SymbolConfiguration(pointSize: s * CGFloat(st.glyphSize), weight: .semibold)
+        let sym = base.withSymbolConfiguration(cfg) ?? base
+
+        let img = NSImage(size: NSSize(width: s, height: s), flipped: false) { rect in
+            let area = rect.insetBy(dx: 10, dy: 10)
+            if st.tile != .none {
+                let path = st.tile == .circle
+                    ? NSBezierPath(ovalIn: area)
+                    : NSBezierPath(roundedRect: area, xRadius: 58, yRadius: 58)
+                if st.gradient,
+                   let g = NSGradient(starting: tile.blended(withFraction: 0.18, of: .white) ?? tile,
+                                      ending: tile.blended(withFraction: 0.22, of: .black) ?? tile) {
+                    g.draw(in: path, angle: -90)
+                } else {
+                    tile.setFill()
+                    path.fill()
+                }
+            }
+            let gs = sym.size
+            let tinted = NSImage(size: gs, flipped: false) { r in
+                sym.draw(in: r)
+                glyph.set()
+                r.fill(using: .sourceAtop)
+                return true
+            }
+            tinted.draw(in: NSRect(x: (s - gs.width) / 2, y: (s - gs.height) / 2,
+                                   width: gs.width, height: gs.height))
+            return true
+        }
         return img
     }
 }
@@ -125,7 +196,8 @@ final class HAStore: ObservableObject {
         didSet {
             save()
             if oldValue.enabled != config.enabled || oldValue.dockEntities != config.dockEntities
-                || oldValue.groupEntities != config.groupEntities {
+                || oldValue.groupEntities != config.groupEntities
+                || oldValue.iconStyle != config.iconStyle {
                 DockModel.shared.reload()
             }
         }

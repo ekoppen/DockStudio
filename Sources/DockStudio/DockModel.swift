@@ -87,7 +87,7 @@ final class DockModel: ObservableObject {
                 let on = ha.isOn(e.id)
                 result.append(DockItem(
                     id: "ha:\(e.id)", name: e.name, url: URL(fileURLWithPath: "/"),
-                    icon: HAIcon.make(domain: e.domain, on: on),
+                    icon: HAIcon.make(domain: e.domain, on: on, symbol: e.symbol, color: e.color),
                     isRunning: on, isTrash: false, haEntity: e.id
                 ))
             }
