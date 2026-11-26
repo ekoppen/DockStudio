@@ -30,6 +30,8 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 struct SettingsView: View {
     @ObservedObject var store: ThemeStore
     @ObservedObject var ha = HAStore.shared
+    @ObservedObject var updater = Updater.shared
+    @State private var updateTokenInput = ""
     @AppStorage("dockstudio.settingsFloating") private var floating = false
     @State private var tab: SettingsTab = .dock
     @State private var tokenInput = ""
@@ -341,6 +343,39 @@ struct SettingsView: View {
         } header: {
             sectionHeader("Vensters van andere apps", "macwindow")
         }
+
+        Section {
+            updatesSection
+        } header: {
+            sectionHeader("Updates", "arrow.down.circle")
+        }
+    }
+
+    @ViewBuilder
+    private var updatesSection: some View {
+        LabeledContent("Huidige versie", value: updater.currentVersion)
+        Toggle("Bij opstarten naar updates zoeken", isOn: $updater.autoCheck)
+        HStack {
+            Button("Zoek naar updates") { Task { await updater.check() } }
+                .disabled(updater.busy)
+            if let v = updater.availableVersion {
+                Button("Installeer \(v)") { Task { await updater.install() } }
+                    .disabled(updater.busy)
+            }
+            if updater.busy { ProgressView().controlSize(.small) }
+        }
+        if !updater.status.isEmpty { note(updater.status) }
+        SecureField("GitHub-token (alleen nodig bij een privé-repo)", text: $updateTokenInput)
+            .textFieldStyle(.roundedBorder)
+        HStack {
+            Button("Bewaar token") { updater.saveToken(updateTokenInput); updateTokenInput = "" }
+                .disabled(updateTokenInput.isEmpty)
+            if updater.tokenSaved {
+                Button("Verwijder token") { updater.saveToken("") }
+            }
+        }
+        note(updater.tokenSaved ? "Token staat in je sleutelhanger."
+             : "Maak een fine-grained token met leesrechten (Contents) voor alleen deze repo.")
     }
 
     // MARK: Tab: Thema's

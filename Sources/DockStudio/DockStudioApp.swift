@@ -82,6 +82,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         WindowAvoider.shared.start()
         WallpaperWatcher.shared.start()
         HAStore.shared.start()
+        Updater.shared.checkOnLaunch()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -108,6 +109,7 @@ struct DockStudioApp: App {
 
 struct MenuContent: View {
     @ObservedObject var store: ThemeStore
+    @ObservedObject var updater = Updater.shared
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
@@ -115,6 +117,12 @@ struct MenuContent: View {
         Button("Instellingen…") {
             openWindow(id: "settings")
             NSApp.activate(ignoringOtherApps: true)
+        }
+        Button(updater.availableVersion.map { "Installeer update \($0)…" } ?? "Zoek naar updates…") {
+            Task {
+                if updater.availableVersion != nil { await updater.install() }
+                else { await updater.check() }
+            }
         }
         Divider()
         Button("Herstel echte Dock") {

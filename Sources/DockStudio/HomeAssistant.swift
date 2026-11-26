@@ -6,24 +6,23 @@ import Security
 
 enum Keychain {
     private static let service = "dockstudio.homeassistant"
-    private static let account = "token"
 
-    private static var base: [String: Any] {
+    private static func base(_ account: String) -> [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,
          kSecAttrService as String: service,
          kSecAttrAccount as String: account]
     }
 
-    static func set(_ value: String) {
-        SecItemDelete(base as CFDictionary)
+    static func set(_ value: String, account: String = "token") {
+        SecItemDelete(base(account) as CFDictionary)
         guard !value.isEmpty else { return }
-        var q = base
+        var q = base(account)
         q[kSecValueData as String] = Data(value.utf8)
         SecItemAdd(q as CFDictionary, nil)
     }
 
-    static func get() -> String? {
-        var q = base
+    static func get(account: String = "token") -> String? {
+        var q = base(account)
         q[kSecReturnData as String] = true
         q[kSecMatchLimit as String] = kSecMatchLimitOne
         var result: AnyObject?
