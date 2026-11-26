@@ -49,14 +49,14 @@ svg=f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1
  <ellipse cx="512" cy="560" rx="360" ry="190" fill="url(#glow)" filter="url(#soft)"/>
  <circle cx="780" cy="250" r="150" fill="#7c4dff" opacity=".35" filter="url(#soft)"/>
 </g>
-<g transform="translate(512,512) scale(1.0) translate(-512,-630)">
+<g clip-path="url(#clip)"><g transform="translate(512,540) scale(1.45) translate(-512,-650)">
 <rect x="152" y="570" width="720" height="160" rx="70" fill="#0a0420" opacity=".35" filter="url(#sh)" transform="translate(0,14)"/>
 <rect x="152" y="570" width="720" height="160" rx="70" fill="url(#pill)"/>
 <rect x="153" y="571" width="718" height="158" rx="69" fill="none" stroke="url(#pillStroke)" stroke-width="2.5"/>
 <g filter="url(#ds)">{t}</g>
 <path d="{star(512,614,50,12)}" fill="#fff" opacity=".95"/>
 <path d="{star(570,566,18,4.5)}" fill="#fff" opacity=".8"/>
-</g>
+</g></g>
 <path d="{body}" fill="none" stroke="#fff" stroke-opacity=".28" stroke-width="3"/>
 </svg>'''
 open('icon.svg','w').write(svg)
