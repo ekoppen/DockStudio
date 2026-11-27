@@ -758,10 +758,16 @@ struct SettingsView: View {
                 Button("Processor") { tileStore.add(.cpu) }
                 Button("Accu") { tileStore.add(.battery) }
                 Divider()
+                Button("Klok") { tileStore.add(.clock) }
+                Button("Weer") { tileStore.add(.weather) }
+                Divider()
+                Button("Knop: map openen") { tileStore.add(.folder) }
+                Button("Knop: server verbinden") { tileStore.add(.server) }
+                Divider()
                 Button("Eigen shell-commando") { tileStore.add(.command) }
                 Button("URL met JSON") { tileStore.add(.url) }
             }
-            note("Een kant verschijnt zodra er een tegel op staat. Tegels zijn zo groot als je dock-iconen en tonen alleen waarden.")
+            note("Een kant verschijnt zodra er een tegel op staat. Tegels zijn zo groot als je dock-iconen. Bij 'Bij klikken' kun je van elke tegel een knop maken.")
         } header: {
             sectionHeader("Tweede dock", "rectangle.split.3x1")
         }
@@ -778,22 +784,43 @@ struct SettingsView: View {
                     ForEach(TileKind.allCases) { Text($0.label).tag($0) }
                 }
                 tileSourceFields($t)
-                Picker("Weergave", selection: $t.display) {
-                    Text("Waarde").tag(TileDisplay.value)
-                    Text("Ring").tag(TileDisplay.ring)
-                    Text("Status").tag(TileDisplay.status)
+                if t.kind.choosesDisplay {
+                    Picker("Weergave", selection: $t.display) {
+                        Text("Waarde").tag(TileDisplay.value)
+                        Text("Ring").tag(TileDisplay.ring)
+                        Text("Status").tag(TileDisplay.status)
+                    }
+                    .pickerStyle(.segmented)
                 }
-                .pickerStyle(.segmented)
-                TextField("Symbool (SF Symbol-naam)", text: $t.symbol)
-                if t.kind != .vpn && t.kind != .system && t.kind != .claude {
+                if t.kind != .clock {
+                    TextField("Symbool (SF Symbol-naam)", text: $t.symbol)
+                }
+                if t.kind.hasNumericValue {
                     TextField("Eenheid, bijv. %", text: $t.unit)
                 }
-                if t.display == .ring && t.kind != .claude && t.kind != .system && t.kind != .vpn {
+                if t.display == .ring && t.kind.hasNumericValue {
                     slider("Ring leeg bij", $t.lo, -100...1000)
                     slider("Ring vol bij", $t.hi, 0...1000)
                 }
-                Stepper(value: $t.interval, in: 5...600, step: 5) {
-                    Text("Verversen elke \(Int(t.interval)) s")
+                if t.kind.hasInterval {
+                    Stepper(value: $t.interval, in: 5...3600, step: t.kind == .weather ? 60 : 5) {
+                        Text("Verversen elke \(Int(t.interval)) s")
+                    }
+                }
+                Picker("Bij klikken", selection: $t.action) {
+                    ForEach(TileAction.allCases) { Text($0.label).tag($0) }
+                }
+                if t.action != .none {
+                    HStack {
+                        TextField(t.action.placeholder, text: $t.actionTarget)
+                            .textFieldStyle(.roundedBorder)
+                        if t.action == .folder {
+                            Button("Kies…") { pickTileFolder($t) }
+                        }
+                    }
+                    if t.action == .ha {
+                        note("Scènes, scripts en knoppen worden uitgevoerd, schakelaars en lampen gaan aan of uit.")
+                    }
                 }
                 Toggle("Eigen kleur", isOn: Binding(
                     get: { t.color != nil },
@@ -866,6 +893,18 @@ struct SettingsView: View {
             Picker("Meting", selection: t.metric) {
                 ForEach(SystemMetric.allCases) { Text($0.label).tag($0) }
             }
+        case .clock:
+            Picker("Tijdzone", selection: t.timezone) {
+                Text("Lokale tijd").tag("")
+                ForEach(TimeZone.knownTimeZoneIdentifiers, id: \.self) { Text($0).tag($0) }
+            }
+            note("Bij een andere tijdzone toont de tegel de titel (bijvoorbeeld de plaatsnaam) in plaats van de datum.")
+        case .weather:
+            TextField("Plaats, bijv. Utrecht", text: t.place)
+                .textFieldStyle(.roundedBorder)
+            note("Temperatuur en weertype via Open-Meteo. Er is geen account of sleutel nodig.")
+        case .button:
+            note("Deze tegel toont alleen een symbool en een titel. Kies hieronder wat een klik doet.")
         case .claude:
             Picker("Periode", selection: t.period) {
                 Text("Vandaag").tag(ClaudePeriod.day)
@@ -874,6 +913,16 @@ struct SettingsView: View {
             .pickerStyle(.segmented)
             slider("Budget voor ring (tokens, 0 = geen)", t.hi, 0...50_000_000)
             note("Telt invoer, uitvoer en cache-aanmaak uit de lokale Claude Code-logs in ~/.claude. Dit is alleen verbruik van Claude Code op deze Mac.")
+        }
+    }
+
+    private func pickTileFolder(_ t: Binding<TileConfig>) {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = false
+        if panel.runModal() == .OK, let url = panel.url {
+            t.wrappedValue.actionTarget = url.path
         }
     }
 

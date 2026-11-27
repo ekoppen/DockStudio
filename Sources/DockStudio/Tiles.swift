@@ -6,7 +6,7 @@ import AppKit
 enum TileSide: String, Codable, CaseIterable { case left, right }
 
 enum TileKind: String, Codable, CaseIterable, Identifiable {
-    case ha, shell, http, vpn, system, claude
+    case ha, shell, http, vpn, system, claude, clock, weather, button
     var id: String { rawValue }
     var label: String {
         switch self {
@@ -16,6 +16,40 @@ enum TileKind: String, Codable, CaseIterable, Identifiable {
         case .vpn: return "VPN-status"
         case .system: return "Systeem"
         case .claude: return "Claude-verbruik"
+        case .clock: return "Klok"
+        case .weather: return "Weer"
+        case .button: return "Knop (alleen actie)"
+        }
+    }
+    /// Bronnen met een eenheid en een instelbare ring.
+    var hasNumericValue: Bool { self == .ha || self == .shell || self == .http }
+    /// Bronnen waarbij de gebruiker de weergave (waarde/ring/status) kiest.
+    var choosesDisplay: Bool { !(self == .clock || self == .weather || self == .button) }
+    /// Bronnen die periodiek worden opgehaald.
+    var hasInterval: Bool { !(self == .clock || self == .button) }
+}
+
+enum TileAction: String, Codable, CaseIterable, Identifiable {
+    case none, folder, server, url, shell, ha
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .none: return "Niets"
+        case .folder: return "Map of bestand openen"
+        case .server: return "Serveradres openen (smb://…)"
+        case .url: return "Webadres openen"
+        case .shell: return "Shell-commando uitvoeren"
+        case .ha: return "Home Assistant-actie"
+        }
+    }
+    var placeholder: String {
+        switch self {
+        case .none: return ""
+        case .folder: return "~/Downloads of /Volumes/DATA/dev"
+        case .server: return "smb://nas.local/share"
+        case .url: return "https://home.example.nl"
+        case .shell: return "open -a Terminal"
+        case .ha: return "script.film_avond of light.woonkamer"
         }
     }
 }
@@ -57,10 +91,14 @@ struct TileConfig: Codable, Identifiable, Equatable {
     var hi = 100.0                  // bovengrens (bij Claude: budget in tokens, 0 = geen ring)
     var interval = 30.0
     var color: RGBA? = nil
+    var action: TileAction = .none  // wat een klik doet
+    var actionTarget = ""
+    var timezone = ""               // klok: leeg = lokale tijd
+    var place = ""                  // weer: plaatsnaam
 
     enum CodingKeys: String, CodingKey {
         case id, title, kind, side, symbol, display, entity, command, url, jsonPath
-        case metric, period, unit, lo, hi, interval, color
+        case metric, period, unit, lo, hi, interval, color, action, actionTarget, timezone, place
     }
 
     init() {}
@@ -84,6 +122,10 @@ struct TileConfig: Codable, Identifiable, Equatable {
         hi = c.get(.hi, 100.0)
         interval = c.get(.interval, 30.0)
         color = try? c.decode(RGBA.self, forKey: .color)
+        action = c.get(.action, TileAction.none)
+        actionTarget = c.get(.actionTarget, "")
+        timezone = c.get(.timezone, "")
+        place = c.get(.place, "")
     }
 }
 
@@ -91,6 +133,7 @@ struct TileValue: Equatable {
     var text: String
     var fraction: Double? = nil
     var ok: Bool? = nil
+    var symbol: String? = nil       // bron mag het symbool bepalen (weer)
 
     static func number(_ v: Double, unit: String, lo: Double, hi: Double) -> TileValue {
         let s = v == v.rounded() ? String(Int(v)) : String(format: "%.1f", v)
@@ -201,6 +244,7 @@ final class TileStore: ObservableObject {
     // Waarden
 
     func value(for t: TileConfig) -> TileValue {
+        if t.kind == .clock || t.kind == .button { return TileValue(text: "") }
         if t.kind == .ha {
             guard let s = HAStore.shared.states[t.entity] else { return TileValue(text: "…") }
             return TileValue.fromString(s, unit: t.unit, lo: t.lo, hi: t.hi)
@@ -224,7 +268,7 @@ final class TileStore: ObservableObject {
     private func tick() {
         guard enabled else { return }
         let now = Date()
-        for t in tiles where t.kind != .ha && !running.contains(t.id) {
+        for t in tiles where t.kind != .ha && t.kind != .clock && t.kind != .button && !running.contains(t.id) {
             let due = (lastRun[t.id].map { now.timeIntervalSince($0) } ?? .infinity) >= max(t.interval, 5)
             guard due else { continue }
             running.insert(t.id)
@@ -240,9 +284,37 @@ final class TileStore: ObservableObject {
         }
     }
 
+    // Acties
+
+    func perform(_ t: TileConfig) {
+        var target = t.actionTarget.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard t.action != .none, !target.isEmpty else { return }
+        switch t.action {
+        case .none:
+            break
+        case .folder:
+            NSWorkspace.shared.open(URL(fileURLWithPath: (target as NSString).expandingTildeInPath))
+        case .server:
+            if !target.contains("://") { target = "smb://" + target }
+            if let u = URL(string: target) { NSWorkspace.shared.open(u) }
+        case .url:
+            if !target.contains("://") { target = "https://" + target }
+            if let u = URL(string: target) { NSWorkspace.shared.open(u) }
+        case .shell:
+            DispatchQueue.global(qos: .userInitiated).async { _ = TileProviders.shell(target, timeout: 60) }
+        case .ha:
+            HAStore.shared.activate(target)
+        }
+    }
+
+    /// Heeft deze kant minstens één tegel die op een klik reageert?
+    func hasActions(on side: TileSide) -> Bool {
+        enabled && tiles(on: side).contains { $0.action != .none }
+    }
+
     // Voorbeeldtegels
 
-    enum Preset { case printer, vpn, claude, cpu, battery, command, url }
+    enum Preset { case printer, vpn, claude, cpu, battery, command, url, clock, weather, folder, server }
 
     func add(_ p: Preset) {
         var t = TileConfig()
@@ -262,6 +334,16 @@ final class TileStore: ObservableObject {
             t.title = "Commando"; t.kind = .shell; t.symbol = "terminal.fill"
         case .url:
             t.title = "URL"; t.kind = .http; t.symbol = "network"
+        case .clock:
+            t.title = "Klok"; t.kind = .clock; t.symbol = "clock"
+        case .weather:
+            t.title = "Weer"; t.kind = .weather; t.symbol = "cloud.sun.fill"; t.display = .value; t.interval = 600
+        case .folder:
+            t.title = "Downloads"; t.kind = .button; t.symbol = "folder.fill"
+            t.action = .folder; t.actionTarget = "~/Downloads"
+        case .server:
+            t.title = "Server"; t.kind = .button; t.symbol = "externaldrive.connected.to.line.below.fill"
+            t.action = .server; t.actionTarget = "smb://"
         }
         tiles.append(t)
         refreshAll()
@@ -288,7 +370,75 @@ enum TileProviders {
         case .vpn: return vpn()
         case .system: return system(t)
         case .claude: return claude(t)
+        case .weather: return await weather(t)
+        case .clock, .button: return nil
         }
+    }
+
+    // Weer via Open-Meteo (gratis, geen sleutel)
+
+    private static let geoLock = NSLock()
+    private static var geoCache: [String: [Double]] = [:]
+    private static func cachedCoord(_ key: String) -> [Double]? {
+        geoLock.lock(); defer { geoLock.unlock() }
+        return geoCache[key]
+    }
+    private static func storeCoord(_ key: String, _ v: [Double]) {
+        geoLock.lock(); defer { geoLock.unlock() }
+        geoCache[key] = v
+    }
+
+    private static func json(_ url: URL) async -> [String: Any]? {
+        var req = URLRequest(url: url, timeoutInterval: 10)
+        req.setValue("Dokko", forHTTPHeaderField: "User-Agent")
+        guard let (data, resp) = try? await URLSession.shared.data(for: req),
+              ((resp as? HTTPURLResponse)?.statusCode ?? 0) < 300 else { return nil }
+        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+    }
+
+    static func weatherSymbol(code: Int, day: Bool) -> String {
+        switch code {
+        case 0: return day ? "sun.max.fill" : "moon.stars.fill"
+        case 1, 2: return day ? "cloud.sun.fill" : "cloud.moon.fill"
+        case 3: return "cloud.fill"
+        case 45, 48: return "cloud.fog.fill"
+        case 51...57: return "cloud.drizzle.fill"
+        case 61...67: return "cloud.rain.fill"
+        case 71...77, 85, 86: return "cloud.snow.fill"
+        case 80...82: return "cloud.heavyrain.fill"
+        case 95...99: return "cloud.bolt.rain.fill"
+        default: return "cloud.fill"
+        }
+    }
+
+    static func weather(_ t: TileConfig) async -> TileValue? {
+        let place = t.place.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !place.isEmpty else { return TileValue(text: "plaats?") }
+        let key = place.lowercased()
+        var coord = cachedCoord(key)
+        if coord == nil {
+            var c = URLComponents(string: "https://geocoding-api.open-meteo.com/v1/search")!
+            c.queryItems = [URLQueryItem(name: "name", value: place), URLQueryItem(name: "count", value: "1"),
+                            URLQueryItem(name: "language", value: "nl"), URLQueryItem(name: "format", value: "json")]
+            guard let url = c.url, let obj = await json(url),
+                  let r = (obj["results"] as? [[String: Any]])?.first,
+                  let lat = (r["latitude"] as? NSNumber)?.doubleValue,
+                  let lon = (r["longitude"] as? NSNumber)?.doubleValue else { return TileValue(text: "onbekend") }
+            coord = [lat, lon]
+            storeCoord(key, [lat, lon])
+        }
+        guard let ll = coord else { return nil }
+        var c = URLComponents(string: "https://api.open-meteo.com/v1/forecast")!
+        c.queryItems = [URLQueryItem(name: "latitude", value: String(ll[0])),
+                        URLQueryItem(name: "longitude", value: String(ll[1])),
+                        URLQueryItem(name: "current", value: "temperature_2m,weather_code,is_day")]
+        guard let url = c.url, let obj = await json(url),
+              let cur = obj["current"] as? [String: Any],
+              let temp = (cur["temperature_2m"] as? NSNumber)?.doubleValue else { return TileValue(text: "fout") }
+        let code = (cur["weather_code"] as? NSNumber)?.intValue ?? 3
+        let day = ((cur["is_day"] as? NSNumber)?.intValue ?? 1) == 1
+        return TileValue(text: "\(Int(temp.rounded()))°", fraction: nil, ok: nil,
+                         symbol: weatherSymbol(code: code, day: day))
     }
 
     static func shell(_ command: String, timeout: TimeInterval = 15) -> String? {
@@ -475,6 +625,7 @@ struct TileView: View {
     let size: CGFloat
     @ObservedObject var ha = HAStore.shared
     @ObservedObject var data = TileData.shared
+    @State private var flash = false
 
     var body: some View {
         let v = TileStore.shared.value(for: tile)
@@ -488,10 +639,44 @@ struct TileView: View {
         }
         .frame(width: size, height: size)
         .shadow(color: .black.opacity(0.25), radius: CGFloat(theme.iconShadow), y: CGFloat(theme.iconShadow) / 3)
+        .scaleEffect(flash ? 0.9 : 1)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard tile.action != .none else { return }
+            withAnimation(.easeOut(duration: 0.1)) { flash = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                withAnimation(.easeOut(duration: 0.15)) { flash = false }
+            }
+            TileStore.shared.perform(tile)
+        }
+        .help(tile.action == .none ? "" : tile.title)
     }
 
     @ViewBuilder
     private func content(_ v: TileValue, _ fg: Color, _ accent: Color) -> some View {
+        switch tile.kind {
+        case .clock:
+            ClockTileContent(tile: tile, size: size, fg: fg)
+        case .button:
+            VStack(spacing: 3) {
+                Image(systemName: tile.symbol)
+                    .font(.system(size: size * 0.4))
+                    .foregroundColor(accent)
+                Text(tile.title)
+                    .font(.system(size: size * 0.16, weight: .medium))
+                    .foregroundColor(fg.opacity(0.85))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+            }
+            .padding(.horizontal, 3)
+        default:
+            valueContent(v, fg, accent)
+        }
+    }
+
+    @ViewBuilder
+    private func valueContent(_ v: TileValue, _ fg: Color, _ accent: Color) -> some View {
+        let sym = v.symbol ?? tile.symbol
         switch tile.display {
         case .ring:
             ZStack {
@@ -502,7 +687,7 @@ struct TileView: View {
                     .rotationEffect(.degrees(-90))
                     .animation(.easeInOut(duration: 0.4), value: v.fraction)
                 VStack(spacing: 0) {
-                    Image(systemName: tile.symbol)
+                    Image(systemName: sym)
                         .font(.system(size: size * 0.2))
                         .foregroundColor(accent)
                     Text(v.text)
@@ -516,7 +701,7 @@ struct TileView: View {
             .padding(size * 0.08)
         case .status:
             VStack(spacing: 2) {
-                Image(systemName: tile.symbol)
+                Image(systemName: sym)
                     .font(.system(size: size * 0.36))
                     .foregroundColor((v.ok ?? false) ? accent : fg.opacity(0.4))
                 Text(v.text)
@@ -527,7 +712,7 @@ struct TileView: View {
             }
         case .value:
             VStack(spacing: 1) {
-                Image(systemName: tile.symbol)
+                Image(systemName: sym)
                     .font(.system(size: size * 0.2))
                     .foregroundColor(accent)
                 Text(v.text)
@@ -542,6 +727,41 @@ struct TileView: View {
                     .minimumScaleFactor(0.6)
             }
             .padding(.horizontal, 4)
+        }
+    }
+}
+
+
+/// Klok met tijd en datum (of plaatsnaam bij een andere tijdzone).
+struct ClockTileContent: View {
+    let tile: TileConfig
+    let size: CGFloat
+    let fg: Color
+
+    private func text(_ date: Date, _ format: String, _ tz: TimeZone) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "nl_NL")
+        f.timeZone = tz
+        f.dateFormat = format
+        return f.string(from: date)
+    }
+
+    var body: some View {
+        TimelineView(.everyMinute) { ctx in
+            let tz = TimeZone(identifier: tile.timezone) ?? .current
+            VStack(spacing: 1) {
+                Text(text(ctx.date, "HH:mm", tz))
+                    .font(.system(size: size * 0.32, weight: .bold, design: .rounded))
+                    .foregroundColor(fg)
+                    .minimumScaleFactor(0.5)
+                    .lineLimit(1)
+                Text(tile.timezone.isEmpty ? text(ctx.date, "EEE d MMM", tz) : tile.title)
+                    .font(.system(size: size * 0.15))
+                    .foregroundColor(fg.opacity(0.7))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+            }
+            .padding(.horizontal, 3)
         }
     }
 }

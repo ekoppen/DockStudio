@@ -123,7 +123,24 @@ final class DockWindowController {
         let rect = NSRect(x: f.midX - baseW / 2 - extraX, y: yMin,
                           width: baseW + extraX * 2, height: f.minY + top - yMin)
 
-        let ignore = panelHidden || !rect.contains(loc)
+        // Kanten met klikbare tegels vangen ook muisevents.
+        var inside = rect.contains(loc)
+        if !inside, TileStore.shared.enabled {
+            let band = NSRect(x: f.minX, y: f.minY + max(bottom - 4, 0),
+                              width: f.width, height: barTop - max(bottom - 4, 0) + 4)
+            if band.contains(loc) {
+                let gap = TileStore.gap
+                if loc.x < rect.minX, TileStore.shared.hasActions(on: .left) {
+                    let w = TileStore.shared.sideWidth(.left, main: t)
+                    inside = loc.x >= f.midX - baseW / 2 - gap - w - 4
+                } else if loc.x > rect.maxX, TileStore.shared.hasActions(on: .right) {
+                    let w = TileStore.shared.sideWidth(.right, main: t)
+                    inside = loc.x <= f.midX + baseW / 2 + gap + w + 4
+                }
+            }
+        }
+
+        let ignore = panelHidden || !inside
         if panel.ignoresMouseEvents != ignore {
             panel.ignoresMouseEvents = ignore
             if ignore { DockHover.shared.mouse = nil }

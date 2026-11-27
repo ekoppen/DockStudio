@@ -41,6 +41,10 @@ final class WindowAvoider {
 
     func start() {
         guard timer == nil else { return }
+        // Bij een Space-wissel (bv. naar een app op volledig scherm) meteen controleren.
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in self?.tick() }
         timer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
             self?.tick()
         }
@@ -58,7 +62,10 @@ final class WindowAvoider {
             controller.setFullScreenHidden(false)
             return
         }
+        // Volledig-scherm-detectie zonder Toegankelijkheid: een venster dat het hele scherm bedekt.
+        let coverFull = NSScreen.screens.first.map { Self.fullScreenWindowCovers($0) } ?? false
         if !AXIsProcessTrusted() {
+            controller.setFullScreenHidden(coverFull)
             if !Self.didPrompt {
                 Self.didPrompt = true
                 Self.requestTrust()
@@ -67,7 +74,10 @@ final class WindowAvoider {
         }
         // Niet ingrijpen terwijl de gebruiker een venster sleept of vergroot.
         guard !busy, NSEvent.pressedMouseButtons & 1 == 0,
-              let screen = NSScreen.screens.first else { return }
+              let screen = NSScreen.screens.first else {
+            controller.setFullScreenHidden(coverFull)
+            return
+        }
 
         let t = store.theme
         let count = DockModel.shared.items.count
@@ -114,7 +124,7 @@ final class WindowAvoider {
             DispatchQueue.main.async {
                 self.busy = false
                 controller.setWantsHidden(mode == .smartHide && overlap)
-                controller.setFullScreenHidden(fullscreen)
+                controller.setFullScreenHidden(fullscreen || coverFull)
             }
         }
     }
@@ -167,6 +177,24 @@ final class WindowAvoider {
             }
         }
         return overlapping
+    }
+
+    /// True als een zichtbaar venster van een andere app het hele scherm bedekt (inclusief menubalk):
+    /// apps op volledig scherm, games en videospelers. Werkt zonder Toegankelijkheid.
+    private static func fullScreenWindowCovers(_ screen: NSScreen) -> Bool {
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
+                                                    kCGNullWindowID) as? [[String: Any]] else { return false }
+        let own = ProcessInfo.processInfo.processIdentifier
+        let W = screen.frame.width, H = screen.frame.height
+        for w in list {
+            guard (w[kCGWindowLayer as String] as? Int) == 0,
+                  (w[kCGWindowOwnerPID as String] as? Int32) != own,
+                  (w[kCGWindowAlpha as String] as? Double ?? 1) > 0.5,
+                  let dict = w[kCGWindowBounds as String] as? NSDictionary,
+                  let r = CGRect(dictionaryRepresentation: dict) else { continue }
+            if r.minX <= 1, r.minY <= 1, r.width >= W - 1, r.height >= H - 40 { return true }
+        }
+        return false
     }
 
     /// Is het actieve venster van deze app in volledig scherm?
