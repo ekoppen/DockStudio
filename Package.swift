@@ -8,6 +8,8 @@ let infoPlist = Context.packageDirectory + "/Resources/Info.plist"
 let package = Package(
     name: "DockStudio",
     platforms: [.macOS(.v13)],
+    // Het programma heet Dokko; de map/target heet nog DockStudio.
+    products: [.executable(name: "Dokko", targets: ["DockStudio"])],
     targets: [
         .executableTarget(
             name: "DockStudio",

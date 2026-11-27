@@ -10,7 +10,7 @@ swift build -c release
 APP="Dokko.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
-cp .build/release/DockStudio "$APP/Contents/MacOS/DockStudio"
+cp .build/release/Dokko "$APP/Contents/MacOS/Dokko"
 
 # App-icoon: Resources/AppIcon.png (1024x1024) -> AppIcon.icns
 mkdir -p "$APP/Contents/Resources"
@@ -31,7 +31,7 @@ cat > "$APP/Contents/Info.plist" <<EOF
 <dict>
   <key>CFBundleName</key><string>Dokko</string>
   <key>CFBundleIdentifier</key><string>nl.doorkoppen.dockstudio</string>
-  <key>CFBundleExecutable</key><string>DockStudio</string>
+  <key>CFBundleExecutable</key><string>Dokko</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleVersion</key><string>$VERSION</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>

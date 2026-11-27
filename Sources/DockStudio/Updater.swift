@@ -6,7 +6,7 @@ import AppKit
 final class Updater: ObservableObject {
     static let shared = Updater()
 
-    static let repo = "ekoppen/DockStudio"
+    static let repo = "ekoppen/dokko"
     private let autoKey = "dockstudio.autoCheckUpdates"
     private let tokenAccount = "github"
 
@@ -58,7 +58,7 @@ final class Updater: ObservableObject {
     private func makeRequest(_ url: URL, accept: String) -> URLRequest {
         var r = URLRequest(url: url)
         r.setValue(accept, forHTTPHeaderField: "Accept")
-        r.setValue("DockStudio", forHTTPHeaderField: "User-Agent")
+        r.setValue("Dokko", forHTTPHeaderField: "User-Agent")
         if let t = cachedToken { r.setValue("Bearer \(t)", forHTTPHeaderField: "Authorization") }
         r.timeoutInterval = 20
         return r
@@ -167,13 +167,16 @@ final class Updater: ObservableObject {
                 return
             }
 
+            // Nieuwe app krijgt de naam uit de download (Dokko.app), ook als de oude anders heette.
+            let target = appURL.deletingLastPathComponent().appendingPathComponent(appName)
+
             // Hulpscript: wacht tot deze app stopt, vervangt hem en start de nieuwe.
             let script = """
             while kill -0 \(ProcessInfo.processInfo.processIdentifier) 2>/dev/null; do sleep 0.3; done
-            rm -rf "\(appURL.path)"
-            ditto "\(newApp.path)" "\(appURL.path)"
-            xattr -dr com.apple.quarantine "\(appURL.path)" 2>/dev/null
-            open "\(appURL.path)"
+            rm -rf "\(appURL.path)" "\(target.path)"
+            ditto "\(newApp.path)" "\(target.path)"
+            xattr -dr com.apple.quarantine "\(target.path)" 2>/dev/null
+            open "\(target.path)"
             rm -rf "\(work.path)"
             """
             let p = Process()
