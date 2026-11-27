@@ -797,12 +797,12 @@ struct SettingsView: View {
                 }
                 Toggle("Eigen kleur", isOn: Binding(
                     get: { t.color != nil },
-                    set: { on in t.color = on ? RGBA(0.35, 0.8, 1.0) : nil }
+                    set: { on in $t.wrappedValue.color = on ? RGBA(0.35, 0.8, 1.0) : nil }
                 ))
                 if t.color != nil {
                     ColorPicker("Kleur", selection: Binding(
                         get: { t.color?.color ?? .blue },
-                        set: { t.color = RGBA(color: $0) }
+                        set: { $t.wrappedValue.color = RGBA(color: $0) }
                     ), supportsOpacity: false)
                 }
                 HStack {

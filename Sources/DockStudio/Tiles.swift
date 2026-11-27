@@ -110,12 +110,15 @@ struct TileValue: Equatable {
     }
 
     static func fromAny(_ v: Any?, unit: String, lo: Double, hi: Double) -> TileValue {
-        switch v {
-        case let b as Bool: return TileValue(text: b ? "Aan" : "Uit", fraction: nil, ok: b)
-        case let n as NSNumber: return number(n.doubleValue, unit: unit, lo: lo, hi: hi)
-        case let s as String: return fromString(s, unit: unit, lo: lo, hi: hi)
-        default: return TileValue(text: "–")
+        if let n = v as? NSNumber {
+            if CFGetTypeID(n) == CFBooleanGetTypeID() {
+                let b = n.boolValue
+                return TileValue(text: b ? "Aan" : "Uit", fraction: nil, ok: b)
+            }
+            return number(n.doubleValue, unit: unit, lo: lo, hi: hi)
         }
+        if let s = v as? String { return fromString(s, unit: unit, lo: lo, hi: hi) }
+        return TileValue(text: "–")
     }
 }
 
