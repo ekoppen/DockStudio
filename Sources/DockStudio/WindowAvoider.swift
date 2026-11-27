@@ -79,9 +79,14 @@ final class WindowAvoider {
         let dockTopAppKit = screen.frame.minY + CGFloat(t.bottomMargin) + barH
         let limitY = H - (dockTopAppKit + 6)                 // AX-coördinaten (y omlaag)
         let menuTop = H - screen.visibleFrame.maxY
-        let barRect = CGRect(x: screen.frame.midX - barW / 2 + CGFloat(t.offsetX),
+        // Tegel-docks naast de hoofd-dock horen erbij.
+        let sideL = TileStore.shared.sideWidth(.left, main: t)
+        let sideR = TileStore.shared.sideWidth(.right, main: t)
+        let extL = sideL > 0 ? sideL + TileStore.gap : 0
+        let extR = sideR > 0 ? sideR + TileStore.gap : 0
+        let barRect = CGRect(x: screen.frame.midX - barW / 2 + CGFloat(t.offsetX) - extL,
                              y: H - dockTopAppKit,
-                             width: barW, height: barH)
+                             width: barW + extL + extR, height: barH)
         let screenRect = CGRect(x: 0, y: 0, width: W, height: H)
 
         let ownPID = ProcessInfo.processInfo.processIdentifier

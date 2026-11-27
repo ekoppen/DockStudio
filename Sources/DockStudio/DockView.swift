@@ -98,6 +98,7 @@ enum DockLayout {
         let barW = barWidth(t, count: count)
         let width = barW + extra * min(n, CGFloat(t.magnificationRange) * 2.5 + 1)
             + CGFloat(t.shadowRadius) * 2 + 40
+            + 2 * TileStore.shared.sideExtent(main: t)
         let height = barHeight(t) + extra + icon * 0.35 + max(CGFloat(t.bottomMargin), 0)
             + CGFloat(t.shadowRadius) + 12 + (t.showLabels ? 34 : 0)
         return CGSize(width: width, height: height)
@@ -299,6 +300,7 @@ struct DockView: View {
     @ObservedObject var store: ThemeStore
     @ObservedObject var model: DockModel
     @ObservedObject var hover = DockHover.shared
+    @ObservedObject var tileStore = TileStore.shared
     @State private var dropTarget: String?
 
     private func targetBinding(_ item: DockItem) -> Binding<Bool> {
@@ -338,6 +340,15 @@ struct DockView: View {
             } else {
                 Color.clear
                     .frame(width: barW, height: DockLayout.barHeight(t))
+            }
+
+            ForEach(TileSide.allCases, id: \.self) { side in
+                let w = tileStore.sideWidth(side, main: t)
+                if w > 0 {
+                    TilesBar(side: side, mainTheme: t, width: w)
+                        .frame(width: w, height: DockLayout.barHeight(t))
+                        .offset(x: (side == .left ? -1 : 1) * (barW / 2 + TileStore.gap + w / 2))
+                }
             }
 
             HStack(alignment: .bottom, spacing: CGFloat(t.spacing)) {

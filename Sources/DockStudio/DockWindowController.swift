@@ -26,6 +26,7 @@ final class DockWindowController {
     func start() {
         store.objectWillChange
             .merge(with: model.objectWillChange)
+            .merge(with: TileStore.shared.objectWillChange)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.apply() }
             .store(in: &bag)

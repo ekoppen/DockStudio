@@ -290,6 +290,7 @@ final class HAStore: ObservableObject {
     private static let usefulDomains: Set<String> = [
         "light", "switch", "scene", "script", "fan", "lock", "cover",
         "input_boolean", "automation", "button",
+        "sensor", "binary_sensor", "input_number", "number", "climate",
     ]
 
     func fetchEntities() {
@@ -331,7 +332,8 @@ final class HAStore: ObservableObject {
     }
 
     private func poll() {
-        let ids = (config.dockEntities + (config.groupEntities ?? [])).map { $0.id }
+        let tileIDs = TileStore.shared.tiles.filter { $0.kind == .ha && !$0.entity.isEmpty }.map { $0.entity }
+        let ids = Array(Set((config.dockEntities + (config.groupEntities ?? [])).map { $0.id } + tileIDs))
         guard config.enabled, tokenSaved, !ids.isEmpty, !polling else { return }
         polling = true
         Task {

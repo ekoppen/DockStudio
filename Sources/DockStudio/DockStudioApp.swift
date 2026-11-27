@@ -87,6 +87,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         WallpaperWatcher.shared.start()
         HAStore.shared.start()
         Updater.shared.checkOnLaunch()
+        TileStore.shared.start()
     }
 
     func applicationWillTerminate(_ notification: Notification) {

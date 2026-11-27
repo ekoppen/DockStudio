@@ -3,7 +3,7 @@ import AppKit
 import UniformTypeIdentifiers
 
 enum SettingsTab: String, CaseIterable, Identifiable {
-    case dock, icons, groups, behavior, themes, connections
+    case dock, icons, groups, tiles, behavior, themes, connections
 
     var id: String { rawValue }
 
@@ -12,6 +12,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .dock: return "Dock"
         case .icons: return "Iconen"
         case .groups: return "Groepen"
+        case .tiles: return "Tegels"
         case .behavior: return "Gedrag"
         case .themes: return "Thema's"
         case .connections: return "Koppelingen"
@@ -23,6 +24,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .dock: return "dock.rectangle"
         case .icons: return "square.grid.2x2"
         case .groups: return "folder"
+        case .tiles: return "rectangle.split.3x1"
         case .behavior: return "wand.and.stars"
         case .themes: return "paintpalette"
         case .connections: return "link"
@@ -43,6 +45,10 @@ struct SettingsView: View {
     @State private var entityFilter = ""
     @State private var haPickerGroup: UUID?
     @State private var haStyleEntity: String?
+    @ObservedObject var tileStore = TileStore.shared
+    @State private var tilePickerID: UUID?
+    @State private var tileFilter = ""
+    @State private var tileToken = ""
     @State private var groupHAFilter = ""
     @FocusState private var searchFocused: Bool
     @State private var paletteIndex = 0
@@ -193,6 +199,7 @@ struct SettingsView: View {
         case .dock: dockTab
         case .icons: iconsTab
         case .groups: groupsTab
+        case .tiles: tilesTab
         case .behavior: behaviorTab
         case .themes: themesTab
         case .connections: connectionsTab
@@ -725,6 +732,202 @@ struct SettingsView: View {
             return HAIcon.make(domain: e?.domain ?? "switch", on: false, symbol: e?.symbol, color: e?.color)
         }
         return NSWorkspace.shared.icon(forFile: path)
+    }
+
+    // MARK: Tab: Tegels
+
+    private func sideThemePicker(_ title: String, _ selection: Binding<UUID?>) -> some View {
+        Picker(title, selection: selection) {
+            Text("Zelfde als hoofd-dock").tag(UUID?.none)
+            ForEach(store.themes) { th in
+                Text(th.name).tag(UUID?.some(th.id))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var tilesTab: some View {
+        Section {
+            Toggle("Tegels naast de dock tonen", isOn: $tileStore.enabled)
+            sideThemePicker("Opmaak links", $tileStore.leftTheme)
+            sideThemePicker("Opmaak rechts", $tileStore.rightTheme)
+            Menu("Nieuwe tegel") {
+                Button("3D-print voortgang (Home Assistant)") { tileStore.add(.printer) }
+                Button("VPN-status") { tileStore.add(.vpn) }
+                Button("Claude-verbruik (lokale logs)") { tileStore.add(.claude) }
+                Button("Processor") { tileStore.add(.cpu) }
+                Button("Accu") { tileStore.add(.battery) }
+                Divider()
+                Button("Eigen shell-commando") { tileStore.add(.command) }
+                Button("URL met JSON") { tileStore.add(.url) }
+            }
+            note("Een kant verschijnt zodra er een tegel op staat. Tegels zijn zo groot als je dock-iconen en tonen alleen waarden.")
+        } header: {
+            sectionHeader("Tweede dock", "rectangle.split.3x1")
+        }
+
+        ForEach($tileStore.tiles) { $t in
+            Section {
+                TextField("Titel", text: $t.title)
+                Picker("Kant", selection: $t.side) {
+                    Text("Links").tag(TileSide.left)
+                    Text("Rechts").tag(TileSide.right)
+                }
+                .pickerStyle(.segmented)
+                Picker("Bron", selection: $t.kind) {
+                    ForEach(TileKind.allCases) { Text($0.label).tag($0) }
+                }
+                tileSourceFields($t)
+                Picker("Weergave", selection: $t.display) {
+                    Text("Waarde").tag(TileDisplay.value)
+                    Text("Ring").tag(TileDisplay.ring)
+                    Text("Status").tag(TileDisplay.status)
+                }
+                .pickerStyle(.segmented)
+                TextField("Symbool (SF Symbol-naam)", text: $t.symbol)
+                if t.kind != .vpn && t.kind != .system && t.kind != .claude {
+                    TextField("Eenheid, bijv. %", text: $t.unit)
+                }
+                if t.display == .ring && t.kind != .claude && t.kind != .system && t.kind != .vpn {
+                    slider("Ring leeg bij", $t.lo, -100...1000)
+                    slider("Ring vol bij", $t.hi, 0...1000)
+                }
+                Stepper(value: $t.interval, in: 5...600, step: 5) {
+                    Text("Verversen elke \(Int(t.interval)) s")
+                }
+                Toggle("Eigen kleur", isOn: Binding(
+                    get: { t.color != nil },
+                    set: { on in t.color = on ? RGBA(0.35, 0.8, 1.0) : nil }
+                ))
+                if t.color != nil {
+                    ColorPicker("Kleur", selection: Binding(
+                        get: { t.color?.color ?? .blue },
+                        set: { t.color = RGBA(color: $0) }
+                    ), supportsOpacity: false)
+                }
+                HStack {
+                    Button { tileStore.move(t.id, by: -1) } label: { Image(systemName: "chevron.up") }
+                    Button { tileStore.move(t.id, by: 1) } label: { Image(systemName: "chevron.down") }
+                    Spacer()
+                    Button("Verwijder tegel", role: .destructive) {
+                        tileStore.tiles.removeAll { $0.id == t.id }
+                    }
+                }
+            } header: {
+                sectionHeader(t.title, "square.grid.2x2")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func tileSourceFields(_ t: Binding<TileConfig>) -> some View {
+        switch t.wrappedValue.kind {
+        case .ha:
+            HStack {
+                TextField("Entiteit, bijv. sensor.printer_voortgang", text: t.entity)
+                    .textFieldStyle(.roundedBorder)
+                Button("Zoek…") {
+                    tileFilter = ""
+                    tilePickerID = t.wrappedValue.id
+                }
+                .popover(isPresented: Binding(
+                    get: { tilePickerID == t.wrappedValue.id },
+                    set: { on in if !on, tilePickerID == t.wrappedValue.id { tilePickerID = nil } }
+                ), arrowEdge: .bottom) {
+                    tileEntityPicker(t)
+                }
+            }
+            note("De waarde van de entiteit wordt elke paar seconden opgehaald. Getallen krijgen een eenheid en een ring, andere waarden (aan/uit, thuis/weg) worden vertaald.")
+        case .shell:
+            TextField("Commando", text: t.command)
+                .textFieldStyle(.roundedBorder)
+            note("De eerste regel van de uitvoer wordt getoond. Met 'tekst|42' vult de ring zich tot 42%. Het commando draait in zsh en mag maximaal 15 seconden duren.")
+        case .http:
+            TextField("URL, bijv. http://printer.local/printer/objects/query?display_status", text: t.url)
+                .textFieldStyle(.roundedBorder)
+            TextField("Pad in de JSON, bijv. result.status.display_status.progress", text: t.jsonPath)
+                .textFieldStyle(.roundedBorder)
+            SecureField("Bearer-token (optioneel)", text: $tileToken)
+                .textFieldStyle(.roundedBorder)
+            HStack {
+                Button("Bewaar token") {
+                    tileStore.setToken(tileToken, for: t.wrappedValue.id)
+                    tileToken = ""
+                }
+                .disabled(tileToken.isEmpty)
+                if tileStore.token(for: t.wrappedValue.id) != nil {
+                    Button("Verwijder token") { tileStore.setToken("", for: t.wrappedValue.id) }
+                }
+            }
+            note("Een getal van 0 tot 1, zoals de voortgang van Moonraker, vul je met 'Ring vol bij' = 1.")
+        case .vpn:
+            note("Toont 'Aan' zodra een VPN-verbinding actief is, ook bij apps als WireGuard of Tailscale.")
+        case .system:
+            Picker("Meting", selection: t.metric) {
+                ForEach(SystemMetric.allCases) { Text($0.label).tag($0) }
+            }
+        case .claude:
+            Picker("Periode", selection: t.period) {
+                Text("Vandaag").tag(ClaudePeriod.day)
+                Text("Laatste 7 dagen").tag(ClaudePeriod.week)
+            }
+            .pickerStyle(.segmented)
+            slider("Budget voor ring (tokens, 0 = geen)", t.hi, 0...50_000_000)
+            note("Telt invoer, uitvoer en cache-aanmaak uit de lokale Claude Code-logs in ~/.claude. Dit is alleen verbruik van Claude Code op deze Mac.")
+        }
+    }
+
+    private func tileEntityPicker(_ t: Binding<TileConfig>) -> some View {
+        let words = tileFilter.lowercased().split(separator: " ").map(String.init)
+        let matches: [HAEntity] = words.isEmpty ? [] : Array(ha.available.filter { e in
+            let hay = (e.id + " " + e.name).lowercased()
+            return words.allSatisfy { hay.contains($0) }
+        }.prefix(8))
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                TextField("Zoek entiteit, bijv. printer", text: $tileFilter)
+                    .textFieldStyle(.roundedBorder)
+                Button { ha.fetchEntities() } label: { Image(systemName: "arrow.clockwise") }
+                    .buttonStyle(.borderless)
+            }
+            if ha.available.isEmpty {
+                Text(ha.tokenSaved ? "Nog geen entiteiten. Klik op vernieuwen."
+                                   : "Sla eerst een token op onder Koppelingen.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if words.isEmpty {
+                Text("Typ om te zoeken in \(ha.available.count) entiteiten.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if matches.isEmpty {
+                Text("Geen resultaten.").font(.caption).foregroundStyle(.secondary)
+            }
+            ForEach(matches) { e in
+                Button {
+                    t.wrappedValue.entity = e.id
+                    if t.wrappedValue.title == "Tegel" || t.wrappedValue.title == "Print" {
+                        t.wrappedValue.title = e.name
+                    }
+                    tilePickerID = nil
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: HAIcon.symbol(for: e.domain)).frame(width: 22)
+                        VStack(alignment: .leading) {
+                            Text(e.name)
+                            Text(e.id).font(.caption2).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(12)
+        .frame(width: 340)
+        .onAppear {
+            if ha.available.isEmpty && ha.tokenSaved && ha.config.enabled { ha.fetchEntities() }
+        }
     }
 
     // MARK: Tab: Koppelingen
